@@ -23,6 +23,8 @@ import os
 import time
 import csv
 import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
 
 import torch
 import torch.backends.cudnn as cudnn
@@ -43,6 +45,10 @@ print(args)
 fieldnames = ['mse', 'rmse', 'absrel', 'lg10', 'mae',
                 'delta1', 'delta2', 'delta3',
                 'data_time', 'gpu_time']
+eval_fieldnames = ['num_samples', 'mse', 'rmse', 'absrel', 'lg10', 'mae',
+                'delta1', 'delta2', 'delta3',
+                'data_time', 'gpu_time']
+
 best_result = Result()
 best_result.set_to_worst()
 
@@ -50,7 +56,12 @@ def create_data_loaders(args):
     # Data loading code
     print("=> creating data loaders ...")
     traindir = os.path.join('data', args.data, 'train')
-    valdir = os.path.join('data', args.data, 'val')
+    
+    if args.evaluate:
+        valdir = os.path.join('data', args.data, 'test')
+    else:
+        valdir = os.path.join('data', args.data, 'val')
+        
     train_loader = None
     val_loader = None
 
@@ -61,6 +72,8 @@ def create_data_loaders(args):
         sparsifier = UniformSampling(num_samples=args.num_samples, max_depth=max_depth)
     elif args.sparsifier == SimulatedStereo.name:
         sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
+    elif args.sparsifier == RandomSampling.name:
+        sparsifier = RandomSampling(num_samples=args.num_samples, max_depth=max_depth)    
 
     if args.data == 'nyudepthv2':
         from dataloaders.nyu_dataloader import NYUDataset
@@ -70,7 +83,7 @@ def create_data_loaders(args):
         val_dataset = NYUDataset(valdir, type='val',
             modality=args.modality, sparsifier=sparsifier)
 
-    elif args.data == 'kitti':
+    elif args.data == 'kitti' or args.data == 'kitti_small':
         from dataloaders.kitti_dataloader import KITTIDataset
         if not args.evaluate:
             train_dataset = KITTIDataset(traindir, type='train',
@@ -80,7 +93,7 @@ def create_data_loaders(args):
 
     else:
         raise RuntimeError('Dataset not found.' +
-                           'The dataset must be either of nyudepthv2 or kitti.')
+                           'The dataset must be either of nyudepthv2 or kitti or kitti_small.')
 
     # set batch size to be 1 for validation
     val_loader = torch.utils.data.DataLoader(val_dataset,
@@ -98,7 +111,7 @@ def create_data_loaders(args):
     return train_loader, val_loader
 
 def main():
-    global args, best_result, output_directory, train_csv, test_csv
+    global args, best_result, output_directory, train_csv, test_csv, eval_csv
 
     # evaluation mode
     start_epoch = 0
@@ -108,14 +121,24 @@ def main():
         print("=> loading best model '{}'".format(args.evaluate))
         checkpoint = torch.load(args.evaluate)
         output_directory = os.path.dirname(args.evaluate)
+        eval_csv = os.path.join(output_directory, 'eval.csv')
+        
+        with open(eval_csv, 'w') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=eval_fieldnames)
+            writer.writeheader()  
+            
         args = checkpoint['args']
         start_epoch = checkpoint['epoch'] + 1
         best_result = checkpoint['best_result']
         model = checkpoint['model']
         print("=> loaded best model (epoch {})".format(checkpoint['epoch']))
-        _, val_loader = create_data_loaders(args)
         args.evaluate = True
-        validate(val_loader, model, checkpoint['epoch'], write_to_file=False)
+        for num_samples in range(2,9):
+            args.num_samples = int(10 ** (num_samples/2))
+            _, val_loader = create_data_loaders(args)
+            validate(val_loader, model, checkpoint['epoch'], write_to_file=True)
+            
+        plot_results()    
         return
 
     # optionally resume from a checkpoint
@@ -182,6 +205,7 @@ def main():
         with open(test_csv, 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
+         
 
     for epoch in range(start_epoch, args.epochs):
       # epoch=start_epoch
@@ -240,7 +264,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
         end = time.time()
 
         if (i + 1) % args.print_freq == 0:
-            print('=> output: {}'.format(output_directory))
+            #print('=> output: {}'.format(output_directory))
             print('Train Epoch: {0} [{1}/{2}]\t'
                   't_Data={data_time:.3f}({average.data_time:.3f}) '
                   't_GPU={gpu_time:.3f}({average.gpu_time:.3f})\n\t'
@@ -261,9 +285,13 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
 
 def validate(val_loader, model, epoch, write_to_file=True):
+    
+    print("=> Evaluating for no. of samples = ", args.num_samples)
+    
     average_meter = AverageMeter()
     model.eval() # switch to evaluate mode
     end = time.time()
+    img_merge = None
     for i, (input, target) in enumerate(val_loader):
         input, target = input.to(device), target.to(device)
         torch.cuda.synchronize() #This is needed only if we want to compute the time
@@ -282,31 +310,35 @@ def validate(val_loader, model, epoch, write_to_file=True):
         average_meter.update(result, gpu_time, data_time, input.size(0))
         end = time.time()
 
+        
         # save 8 images for visualization
-        skip = 50
-        if args.modality == 'd':
-            img_merge = None
-        else:
-            if args.modality == 'rgb':
-                rgb = input
-            elif args.modality == 'rgbd':
-                rgb = input[:,:3,:,:]
-                depth = input[:,3:,:,:]
+        if not args.evaluate:
+            skip = 50
+            if args.modality == 'd':
+                img_merge = None
+            else:
+                if args.modality == 'rgb':
+                    rgb = input
+                elif args.modality == 'rgbd':
+                    rgb = input[:,:3,:,:]
+                    depth = input[:,3:,:,:]
 
-            if i == 0:
-                if args.modality == 'rgbd':
-                    img_merge = utils.merge_into_row_with_gt(rgb, depth, target, pred)
-                else:
-                    img_merge = utils.merge_into_row(rgb, target, pred)
-            elif (i < 8*skip) and (i % skip == 0):
-                if args.modality == 'rgbd':
-                    row = utils.merge_into_row_with_gt(rgb, depth, target, pred)
-                else:
-                    row = utils.merge_into_row(rgb, target, pred)
-                img_merge = utils.add_row(img_merge, row)
-            elif i == 8*skip:
-                filename = output_directory + '/comparison_' + str(epoch) + '.png'
-                utils.save_image(img_merge, filename)
+
+
+                if i == 0:
+                    if args.modality == 'rgbd':
+                        img_merge = utils.merge_into_row_with_gt(rgb, depth, target, pred)
+                    else:
+                        img_merge = utils.merge_into_row(rgb, target, pred)
+                elif (i < 8*skip) and (i % skip == 0):
+                    if args.modality == 'rgbd':
+                        row = utils.merge_into_row_with_gt(rgb, depth, target, pred)
+                    else:
+                        row = utils.merge_into_row(rgb, target, pred)
+                    img_merge = utils.add_row(img_merge, row)
+                elif i == 8*skip:
+                    filename = output_directory + '/comparison_' + str(epoch) + '.png'
+                    utils.save_image(img_merge, filename)
 
         if (i+1) % args.print_freq == 0:
             print('Test: [{0}/{1}]\t'
@@ -330,12 +362,32 @@ def validate(val_loader, model, epoch, write_to_file=True):
         average=avg, time=avg.gpu_time))
 
     if write_to_file:
-        with open(test_csv, 'a') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writerow({'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel, 'lg10': avg.lg10,
-                'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3,
-                'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
+        if args.evaluate:
+            with open(eval_csv, 'a') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=eval_fieldnames)
+                writer.writerow({'num_samples': args.num_samples, 'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel,  'lg10': avg.lg10, 'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3, 'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
+                
+        else:
+            with open(test_csv, 'a') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writerow({'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel, 'lg10': avg.lg10,
+                    'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3,
+                    'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
+            
+                
     return avg, img_merge
+
+def plot_results():
+    
+    df = pd.read_csv( eval_csv)
+    for y in ['rmse', 'absrel', 'delta1', 'delta2']:
+        fig = plt.figure()
+        plt.plot( np.log10(df['num_samples']) , df[y])
+        plt.xlabel('Log of no. of samples')
+        plt.ylabel(y)
+        fig_path = os.path.join(output_directory, y)
+        plt.savefig( fig_path)  
+    
 
 if __name__ == '__main__':
     main()

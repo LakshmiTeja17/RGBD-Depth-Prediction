@@ -24,12 +24,12 @@ class KITTIDataset(MyDataloader):
 
         rgb_np = transform(rgb)
         rgb_np = self.color_jitter(rgb_np) # random color jittering
-        #rgb_np = np.asfarray(rgb_np, dtype='float') / 255	#Why do this??
+        rgb_np = np.asfarray(rgb_np, dtype='float') / 255	#Why do this??
         # Scipy affine_transform produced RuntimeError when the depth map was
         # given as a 'numpy.ndarray'
-        #depth_np = np.asfarray(depth_np, dtype='float32')
+        depth_np = np.asfarray(depth_np, dtype='float32')
         depth_np = transform(depth_np)
-
+        
         return rgb_np, depth_np
 
     def val_transform(self, rgb, depth):
@@ -39,8 +39,8 @@ class KITTIDataset(MyDataloader):
             transforms.CenterCrop(self.output_size)
         ])
         rgb_np = transform(rgb)
-        #rgb_np = np.asfarray(rgb_np, dtype='float') / 255	#Why do this??
-        #depth_np = np.asfarray(depth_np, dtype='float32')
+        rgb_np = np.asfarray(rgb_np, dtype='float') / 255      #Why do this??
+        depth_np = np.asfarray(depth_np, dtype='float32')
         depth_np = transform(depth_np)
 
         return rgb_np, depth_np

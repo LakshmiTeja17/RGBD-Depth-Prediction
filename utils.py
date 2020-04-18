@@ -10,7 +10,7 @@ cmap = plt.cm.viridis
 def parse_command():
     model_names = ['resnet18', 'resnet50', 'vgg16','vgg19']
     loss_names = ['l1', 'l2']
-    data_names = ['nyudepthv2', 'kitti']
+    data_names = ['nyudepthv2', 'kitti', 'kitti_small']
     from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo, RandomSampling
     sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo, RandomSampling]]
     from models import Decoder
@@ -37,11 +37,11 @@ def parse_command():
                         help='decoder: ' + ' | '.join(decoder_names) + ' (default: upproj)')
     parser.add_argument('-j', '--workers', default=10, type=int, metavar='N',
                         help='number of data loading workers (default: 10)')
-    parser.add_argument('--epochs', default=15, type=int, metavar='N',
-                        help='number of total epochs to run (default: 15)')
+    parser.add_argument('--epochs', default=20, type=int, metavar='N',
+                        help='number of total epochs to run (default: 20)')
     parser.add_argument('-c', '--criterion', metavar='LOSS', default='l1', choices=loss_names,
                         help='loss function: ' + ' | '.join(loss_names) + ' (default: l1)')
-    parser.add_argument('-b', '--batch-size', default=8, type=int, help='mini-batch size (default: 8)')
+    parser.add_argument('-b', '--batch-size', default=16, type=int, help='mini-batch size (default: 16)')
     parser.add_argument('--lr', '--learning-rate', default=0.01, type=float,
                         metavar='LR', help='initial learning rate (default 0.01)')
     parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
