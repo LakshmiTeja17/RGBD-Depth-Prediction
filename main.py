@@ -18,19 +18,20 @@
 
 import sys
 sys.stdout.flush()
-
+import torch.nn.parallel
+import torch.utils.data
+import helper
+from inverse_warp import Intrinsics, homography_from
 import os
 import time
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
-
 import torch
 import torch.backends.cudnn as cudnn
 import torch.optim
 cudnn.benchmark = True
-
 from models import ResNet, VGGNet
 from metrics import AverageMeter, Result
 from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo, RandomSampling
@@ -51,6 +52,21 @@ eval_fieldnames = ['num_samples', 'mse', 'rmse', 'absrel', 'lg10', 'mae',
 
 best_result = Result()
 best_result.set_to_worst()
+
+cuda = torch.cuda.is_available() and not args.cpu
+if cuda:
+    import torch.backends.cudnn as cudnn
+    cudnn.benchmark = True
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
+print("=> using '{}' for computation.".format(device))
+
+# define loss functions
+depth_criterion = criteria.MaskedMSELoss() if (
+    args.criterion == 'l2') else criteria.MaskedL1Loss()
+photometric_criterion = criteria.PhotometricLoss()
+smoothness_criterion = criteria.SmoothnessLoss()
 
 def create_data_loaders(args):
     # Data loading code
@@ -183,12 +199,6 @@ def main():
         # model = torch.nn.DataParallel(model).cuda() # for multi-gpu training
         model = model.to(device)
 
-    # define loss function (criterion) and optimizer
-    if args.criterion == 'l2':
-        criterion = criteria.MaskedMSELoss().to(device)
-    elif args.criterion == 'l1':
-        criterion = criteria.MaskedL1Loss().to(device)
-
     # create results folder, if not already exists
     output_directory = utils.get_output_directory(args)
     if not os.path.exists(output_directory):
@@ -211,7 +221,7 @@ def main():
       # epoch=start_epoch
       # print(epoch)
       utils.adjust_learning_rate(optimizer, epoch, args.lr)
-      train(train_loader, model, criterion, optimizer, epoch) # train for one epoch
+      train(train_loader, model, optimizer, epoch) # train for one epoch
       result, img_merge = validate(val_loader, model, epoch) # evaluate on validation set
 
       # remember best rmse and save checkpoint
@@ -235,9 +245,11 @@ def main():
       }, is_best, epoch, output_directory)
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
-    # print('trainging....')
+def train(train_loader, model, optimizer, epoch):
+    # print('training....')
+    block_average_meter = AverageMeter()
     average_meter = AverageMeter()
+    meters = [block_average_meter, average_meter]
     model.train() # switch to train mode
     end = time.time()
     for i, (input, target) in enumerate(train_loader):
@@ -250,11 +262,55 @@ def train(train_loader, model, criterion, optimizer, epoch):
         # compute pred
         end = time.time()
         pred = model(input)
-        loss = criterion(pred, target)
+        depth_loss, photometric_loss, smooth_loss, mask = 0, 0, 0, None
+        # loss = criterion(pred, target)
+        # Loss 1:depth loss
+        depth_loss = depth_criterion(pred,target)
+        mask = (target<1e-3).float() #not specified why
+        # Loss 2: the self-supervised photometric loss
+        if args.use_pose:
+            # create multi-scale pyramids
+            pred_array = helper.multiscale(pred)
+            rgb_curr_array = helper.multiscale(batch_data['rgb'])
+            # how to get the near rgb frame (the next one)
+            rgb_near_array = helper.multiscale(batch_data['rgb_near'])
+            if mask is not None:
+                mask_array = helper.multiscale(mask)
+            num_scales = len(pred_array)
+
+            # compute photometric loss at multiple scales
+            for scale in range(len(pred_array)):
+                pred_ = pred_array[scale]
+                rgb_curr_ = rgb_curr_array[scale]
+                rgb_near_ = rgb_near_array[scale]
+                mask_ = None
+                if mask is not None:
+                    mask_ = mask_array[scale]
+
+                # compute the corresponding intrinsic parameters
+                height_, width_ = pred_.size(2), pred_.size(3)
+                intrinsics_ = kitti_intrinsics.scale(height_, width_)
+
+                # inverse warp from a nearby frame to the current frame
+                warped_ = homography_from(rgb_near_, pred_,
+                                            batch_data['r_mat'],
+                                            batch_data['t_vec'], intrinsics_)
+                photometric_loss += photometric_criterion(
+                    rgb_curr_, warped_, mask_) * (2**(scale - num_scales))
+
+        # Loss 3: the depth smoothness loss
+        smooth_loss = smoothness_criterion(pred) if args.w2 > 0 else 0
+
+        # backprop
+        loss = depth_loss + args.w1 * photometric_loss + args.w2 * smooth_loss
         optimizer.zero_grad()
-        loss.backward() # compute gradient and do SGD step
+        loss.backward()
         optimizer.step()
-        torch.cuda.synchronize()
+
+        # optimizer.zero_grad()
+        # loss.backward() # compute gradient and do SGD step
+        # optimizer.step()
+        # torch.cuda.synchronize()
         gpu_time = time.time() - end
 
         # measure accuracy and record loss
