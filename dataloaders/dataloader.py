@@ -5,7 +5,10 @@ import torch.utils.data as data
 import h5py #https://www.h5py.org/
 import dataloaders.transforms as transforms
 import cv2
-
+from random import choice
+from PIL import Image
+from pose_estimator import get_pose_pnp
+from numpy import linalg as LA
 IMG_EXTENSIONS = ['.h5', '.png']
 
 def is_image_file(filename):
@@ -24,6 +27,46 @@ def make_dataset_h5(dir):
                     path = os.path.join(root, fname)
                     images.append(path)
     return np.array(images)
+
+def rgb_read(filename):
+    assert os.path.exists(filename), "file not found: {}".format(filename)
+    img_file = Image.open(filename)
+    # rgb_png = np.array(img_file, dtype=float) / 255.0 # scale pixels to the range [0,1]
+    rgb_png = np.array(img_file, dtype='uint8')  # in the range [0,255]
+    img_file.close()
+    return rgb_png
+
+def get_rgb_near(path):
+    assert path is not None, "path is None"
+
+    def extract_frame_id(filename):
+        head, tail = os.path.split(filename)
+        number_string = tail[0:tail.find('.')]
+        number = int(number_string)
+        return head, number
+
+    def get_nearby_filename(filename, new_id):
+        head, _ = os.path.split(filename)
+        new_filename = os.path.join(head, '%010d.png' % new_id)
+        return new_filename
+
+    head, number = extract_frame_id(path)
+    count = 0
+    max_frame_diff = 3
+    candidates = [
+        i - max_frame_diff for i in range(max_frame_diff * 2 + 1)
+        if i - max_frame_diff != 0
+    ]
+    while True:
+        random_offset = choice(candidates)
+        path_near = get_nearby_filename(path, number + random_offset)
+        if os.path.exists(path_near):
+            break
+        assert count < 20, "cannot find a nearby frame in 20 trials for {}".format(path)
+
+    return rgb_read(path_near)
+
+
 
 def make_dataset_png(dir):
     images = []
@@ -72,7 +115,7 @@ class MyDataloader(data.Dataset):
         print("Found {} images in {} folder.".format(len(imgs), type))
         self.root = root
         self.imgs = imgs
-
+        self.threshold_translation = 0.1
         if type == 'train':
             self.transform = self.train_transform
         elif type == 'val':
@@ -117,24 +160,66 @@ class MyDataloader(data.Dataset):
         """
         if self.loader == png_loader:
             rgb_path, depth_path = self.imgs[index]
+            count = 0
+            max_frame_diff = 3
+            candidates = [
+                i - max_frame_diff for i in range(max_frame_diff * 2 + 1)
+                if i - max_frame_diff != 0
+            ]
+            while True:
+                random_offset = choice(candidates)
+                path_near = self.imgs[index+random_offset]
+                if os.path.exists(path_near):
+                    break
+                assert count < 20, "cannot find a nearby frame in 20 trials for {}".format(rgb_path)
+            rgb_near = cv2.imread(path_near)
+            depth_near = cv2.imread(path_near)
             rgb, depth = self.loader(rgb_path, depth_path)
         if self.loader == h5_loader:
             path = self.imgs[index]
+            count = 0
+            max_frame_diff = 3
+            candidates = [
+                i - max_frame_diff for i in range(max_frame_diff * 2 + 1)
+                if i - max_frame_diff != 0
+            ]
+            while True:
+                random_offset = choice(candidates)
+                path_near = self.imgs[index+random_offset]
+                if os.path.exists(path_near):
+                    break
+                assert count < 20, "cannot find a nearby frame in 20 trials for {}".format(path)
             rgb, depth = self.loader(path)
-            
-        return rgb, depth
+            rgb_near,depth_near = self.loader(path_near)
+        return rgb, depth , rgb_near,depth_near
 
     def __getitem__(self, index):
-        rgb, depth = self.__getraw__(index)
+        rgb, depth,rgb_near,depth_near= self.__getraw__(index)
 
         if self.transform is not None:
             rgb_np = rgb
             depth_np = depth
+            rgb_near_np = rgb_near
+            # depth_near_np = depth_near
             rgb_np, depth_np = self.transform(rgb, depth)
+            rgb_near_np, _ = self.transform(rgb_near, depth_near)
         else:
             raise(RuntimeError("transform not defined"))
 
+        r_mat,t_vec = None,None
+        if self.split == 'train' and self.args.use_pose:
+            success, r_vec, t_vec = get_pose_pnp(rgb, rgb_near, depth, self.K)
+            # discard if translation is too small
+            success = success and LA.norm(t_vec) > self.threshold_translation
+            if success:
+                r_mat, _ = cv2.Rodrigues(r_vec)
+            else:
+                # return the same image and no motion when PnP fails
+                rgb_near = rgb
+                t_vec = np.zeros((3, 1))
+                r_mat = np.eye(3)
 
+        # rgb, gray = handle_gray(rgb, self.args)
         # color normalization
         # rgb_tensor = normalize_rgb(rgb_tensor)
         # rgb_np = normalize_np(rgb_np)
@@ -147,12 +232,14 @@ class MyDataloader(data.Dataset):
             input_np = self.create_sparse_depth(rgb_np, depth_np)
 
         input_tensor = to_tensor(input_np)
+        rgb_near_tensor = to_tensor(rgb_near_np)
         while input_tensor.dim() < 3:
             input_tensor = input_tensor.unsqueeze(0)
         depth_tensor = to_tensor(depth_np)
         depth_tensor = depth_tensor.unsqueeze(0)
-
-        return input_tensor, depth_tensor
+        r_mat_tensor = to_tensor(r_mat)
+        t_vec_tensor = to_tensor(t_vec)
+        return input_tensor, depth_tensor,rgb_near_tensor,r_mat_tensor,t_vec_tensor
 
     def __len__(self):
         return len(self.imgs)

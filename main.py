@@ -21,6 +21,7 @@ sys.stdout.flush()
 import torch.nn.parallel
 import torch.utils.data
 import helper
+from dataloaders.kitti_dataloader import load_calib, oheight, owidth
 from inverse_warp import Intrinsics, homography_from
 import os
 import time
@@ -67,6 +68,15 @@ depth_criterion = criteria.MaskedMSELoss() if (
     args.criterion == 'l2') else criteria.MaskedL1Loss()
 photometric_criterion = criteria.PhotometricLoss()
 smoothness_criterion = criteria.SmoothnessLoss()
+
+if args.use_pose:
+    # hard-coded KITTI camera intrinsics
+    K = load_calib()
+    fu, fv = float(K[0, 0]), float(K[1, 1])
+    cu, cv = float(K[0, 2]), float(K[1, 2])
+    kitti_intrinsics = Intrinsics(owidth, oheight, fu, fv, cu, cv)
+    if cuda:
+        kitti_intrinsics = kitti_intrinsics.cuda()
 
 def create_data_loaders(args):
     # Data loading code
@@ -252,7 +262,7 @@ def train(train_loader, model, optimizer, epoch):
     meters = [block_average_meter, average_meter]
     model.train() # switch to train mode
     end = time.time()
-    for i, (input, target) in enumerate(train_loader):
+    for i, (input, target,near,r_mat,t_vec) in enumerate(train_loader):
 
         input, target = input.to(device), target.to(device)
         torch.cuda.synchronize()
@@ -271,9 +281,9 @@ def train(train_loader, model, optimizer, epoch):
         if args.use_pose:
             # create multi-scale pyramids
             pred_array = helper.multiscale(pred)
-            rgb_curr_array = helper.multiscale(batch_data['rgb'])
+            rgb_curr_array = helper.multiscale(input)
             # how to get the near rgb frame (the next one)
-            rgb_near_array = helper.multiscale(batch_data['rgb_near'])
+            rgb_near_array = helper.multiscale(near)
             if mask is not None:
                 mask_array = helper.multiscale(mask)
             num_scales = len(pred_array)
@@ -293,8 +303,8 @@ def train(train_loader, model, optimizer, epoch):
 
                 # inverse warp from a nearby frame to the current frame
                 warped_ = homography_from(rgb_near_, pred_,
-                                            batch_data['r_mat'],
-                                            batch_data['t_vec'], intrinsics_)
+                                            r_mat,
+                                            t_vec, intrinsics_)
                 photometric_loss += photometric_criterion(
                     rgb_curr_, warped_, mask_) * (2**(scale - num_scales))
 
@@ -307,9 +317,6 @@ def train(train_loader, model, optimizer, epoch):
         loss.backward()
         optimizer.step()
 
-        # optimizer.zero_grad()
-        # loss.backward() # compute gradient and do SGD step
-        # optimizer.step()
         # torch.cuda.synchronize()
         gpu_time = time.time() - end
 
