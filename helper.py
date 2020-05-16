@@ -209,9 +209,11 @@ ignore_hidden = shutil.ignore_patterns(".", "..", ".git*", "*pycache*",
 
 
 def backup_source_code(backup_directory):
-    if os.path.exists(backup_directory):
-        shutil.rmtree(backup_directory)
-    shutil.copytree('.', backup_directory, ignore=ignore_hidden)
+    pass
+    # if os.path.exists(backup_directory):
+    #     shutil.rmtree(backup_directory)
+    # pass
+    # shutil.copytree('.', backup_directory, ignore=ignore_hidden)
 
 
 def adjust_learning_rate(lr_init, optimizer, epoch):
@@ -221,6 +223,13 @@ def adjust_learning_rate(lr_init, optimizer, epoch):
         param_group['lr'] = lr
     return lr
 
+def get_output_directory(args):
+    output_directory = os.path.join('results',
+        '{}.sparsifier={}.samples={}.modality={}.arch={}.decoder={}.criterion={}.lr={}.bs={}.pretrained={}'.
+        format(args.data, args.sparsifier, args.num_samples, args.modality, \
+            args.arch, args.decoder, args.criterion, args.lr, args.batch_size, \
+            args.pretrained))
+    return output_directory
 
 def save_checkpoint(state, is_best, epoch, output_directory):
     checkpoint_filename = os.path.join(output_directory,
@@ -244,7 +253,7 @@ def get_folder_name(args):
     else:
         prefix = "mode={}.".format(args.train_mode)
     return os.path.join(args.result,
-        prefix + 'input={}.resnet{}.criterion={}.lr={}.bs={}.wd={}.pretrained={}.jitter={}.time={}'.
+        prefix + 'input={}.vgg{}.criterion={}.lr={}.bs={}.wd={}.pretrained={}.jitter={}.time={}'.
         format(args.input, args.layers, args.criterion, \
             args.lr, args.batch_size, args.weight_decay, \
             args.pretrained, args.jitter, current_time

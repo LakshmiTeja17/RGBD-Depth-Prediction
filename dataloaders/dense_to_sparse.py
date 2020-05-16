@@ -38,6 +38,8 @@ class RandomSampling(DenseToSparse):
             arr = np.zeros(n_keep, dtype = bool)
             arr[: self.num_samples] = True
             np.random.shuffle(arr)
+            # print(np.nonzero(mask_keep))
+            # print(mask_keep.shape)
             i, j = np.nonzero(mask_keep)
             mask_keep[i,j] = arr
             return mask_keep

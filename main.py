@@ -1,58 +1,152 @@
-''' TO CONSIDER:
-1) Skip connections
-2) Dilated convolutions: https://arxiv.org/abs/1606.00915
-3) Multi-Scale Context Module: https://arxiv.org/pdf/1511.07122.pdf
-4) Joint Pyramid Upsampling: https://arxiv.org/pdf/1903.11816.pdf (See other links here)
-'''
-
-
-
-
-
-
-
-
-
-
-
-
-import sys
-sys.stdout.flush()
-import torch.nn.parallel
-import torch.utils.data
-import helper
-from dataloaders.kitti_dataloader import load_calib, oheight, owidth
-from inverse_warp import Intrinsics, homography_from
+import argparse
 import os
 import time
-import csv
 import numpy as np
-import matplotlib.pyplot as plt
-import pandas as pd
 import torch
-import torch.backends.cudnn as cudnn
+import torch.nn.parallel
 import torch.optim
-cudnn.benchmark = True
-from models import ResNet, VGGNet
-from metrics import AverageMeter, Result
+import torch.utils.data
+from dataloaders.kitti_loader import load_calib, oheight, owidth, input_options, KittiDepth,png_loader
 from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo, RandomSampling
+from model import VGGNet
+from model import Decoder
+from metrics import AverageMeter, Result
 import criteria
-import utils
+import helper
+from inverse_warp import Intrinsics, homography_from
 
-device = torch.device("cuda")
-
-args = utils.parse_command()
+model_names = ['resnet18', 'resnet50', 'vgg16','vgg19']
+loss_names = ['l1', 'l2']
+data_names = ['nyudepthv2', 'kitti', 'kitti_small']
+sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo, RandomSampling]]
+decoder_names = Decoder.names
+parser = argparse.ArgumentParser(description='Sparse-to-Dense')
+parser.add_argument('-w',
+                    '--workers',
+                    default=4,
+                    type=int,
+                    metavar='N',
+                    help='number of data loading workers (default: 4)')
+parser.add_argument('--epochs',
+                    default=11,
+                    type=int,
+                    metavar='N',
+                    help='number of total epochs to run (default: 11)')
+parser.add_argument('--start-epoch',
+                    default=0,
+                    type=int,
+                    metavar='N',
+                    help='manual epoch number (useful on restarts)')
+parser.add_argument('-c',
+                    '--criterion',
+                    metavar='LOSS',
+                    default='l2',
+                    choices=criteria.loss_names,
+                    help='loss function: | '.join(criteria.loss_names) +
+                    ' (default: l2)')
+parser.add_argument('-b',
+                    '--batch-size',
+                    default=2,
+                    type=int,
+                    help='mini-batch size (default: 2)')
+parser.add_argument('--lr',
+                    '--learning-rate',
+                    default=1e-5,
+                    type=float,
+                    metavar='LR',
+                    help='initial learning rate (default 1e-5)')
+parser.add_argument('--weight-decay',
+                    '--wd',
+                    default=0,
+                    type=float,
+                    metavar='W',
+                    help='weight decay (default: 0)')
+parser.add_argument('--print-freq',
+                    '-p',
+                    default=10,
+                    type=int,
+                    metavar='N',
+                    help='print frequency (default: 10)')
+parser.add_argument('--resume',
+                    default='',
+                    type=str,
+                    metavar='PATH',
+                    help='path to latest checkpoint (default: none)')
+parser.add_argument('--data-folder',
+                    default='data/kitti',
+                    type=str,
+                    metavar='PATH',
+                    help='data folder (default: none)')
+parser.add_argument('-i',
+                    '--input',
+                    type=str,
+                    default='rgbd',
+                    choices=input_options,
+                    help='input: | '.join(input_options))
+parser.add_argument('-l',
+                    '--layers',
+                    type=int,
+                    default=16,
+                    help='use 16 for sparse_conv; use 18 or 34 for resnet')
+parser.add_argument('--pretrained',
+                    action="store_true",
+                    help='use ImageNet pre-trained weights')
+parser.add_argument('--val',
+                    type=str,
+                    default="select",
+                    choices=["select", "full"],
+                    help='full or select validation set')
+parser.add_argument('--jitter',
+                    type=float,
+                    default=0.1,
+                    help='color jitter for images')
+parser.add_argument(
+    '--rank-metric',
+    type=str,
+    default='rmse',
+    choices=[m for m in dir(Result()) if not m.startswith('_')],
+    help='metrics for which best result is sbatch_datacted')
+parser.add_argument(
+    '-m',
+    '--train-mode',
+    type=str,
+    default="sparse+photo",
+    choices=["dense", "sparse", "photo", "sparse+photo", "dense+photo"],
+    help='dense | sparse | photo | sparse+photo | dense+photo')
+parser.add_argument('--cpu', action="store_true", help='run on cpu')
+parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18', choices=model_names,
+                    help='model architecture: ' + ' | '.join(model_names) + ' (default: resnet18)')
+parser.add_argument('--data', metavar='DATA', default='kitti',
+                    choices=data_names,
+                    help='dataset: ' + ' | '.join(data_names) + ' (default: kitti)')
+parser.add_argument('-s', '--num-samples', default=100, type=int, metavar='N',
+                    help='number of sparse depth samples (default: 100)')
+parser.add_argument('--max-depth', default=-1.0, type=float, metavar='D',
+                    help='cut-off depth of sparsifier, negative values means infinity (default: inf [m])')
+parser.add_argument('--sparsifier', metavar='SPARSIFIER', default=RandomSampling.name, choices=sparsifier_names,
+                    help='sparsifier: ' + ' | '.join(sparsifier_names) + ' (default: ' + RandomSampling.name + ')')
+parser.add_argument('--decoder', '-d', metavar='DECODER', default='upproj', choices=decoder_names,
+                    help='decoder: ' + ' | '.join(decoder_names) + ' (default: upproj)')
+parser.add_argument('--momentum', default=0.9, type=float, metavar='M',
+                    help='momentum')
+parser.add_argument('-e', '--evaluate', dest='evaluate', type=str, default='',
+                    help='evaluate model on validation set')
+parser.add_argument('--no-pretrain', dest='pretrained', action='store_false',
+                    help='not to use ImageNet pre-trained weights')
+parser.set_defaults(pretrained=True)
+args = parser.parse_args()
+print(args.train_mode)
+args.use_pose = ("photo" in args.train_mode)
+# args.pretrained = not args.no_pretrained
+args.result = os.path.join('results')
+args.use_rgb = ('rgb' in args.input) or args.use_pose
+args.use_d = 'd' in args.input
+args.use_g = 'g' in args.input
+if args.use_pose:
+    args.w1, args.w2 = 0.1, 0.1
+else:
+    args.w1, args.w2 = 0, 0
 print(args)
-
-fieldnames = ['mse', 'rmse', 'absrel', 'lg10', 'mae',
-                'delta1', 'delta2', 'delta3',
-                'data_time', 'gpu_time']
-eval_fieldnames = ['num_samples', 'mse', 'rmse', 'absrel', 'lg10', 'mae',
-                'delta1', 'delta2', 'delta3',
-                'data_time', 'gpu_time']
-
-best_result = Result()
-best_result.set_to_worst()
 
 cuda = torch.cuda.is_available() and not args.cpu
 if cuda:
@@ -78,15 +172,135 @@ if args.use_pose:
     if cuda:
         kitti_intrinsics = kitti_intrinsics.cuda()
 
+
+def iterate(mode, args, loader, model, optimizer, logger, epoch):
+    block_average_meter = AverageMeter()
+    average_meter = AverageMeter()
+    meters = [block_average_meter, average_meter]
+
+    # switch to appropriate mode
+    assert mode in ["train", "val", "eval", "test_prediction", "test_completion"], \
+        "unsupported mode: {}".format(mode)
+    if mode == 'train':
+        model.train()
+        lr = helper.adjust_learning_rate(args.lr, optimizer, epoch)
+    else:
+        model.eval()
+        lr = 0
+
+    for i, batch_data in enumerate(loader):
+        print('Iterating.....')
+        start = time.time()
+        batch_data = {
+            key: val.to(device)
+            for key, val in batch_data.items() if val is not None
+        }
+        # gt = batch_data[
+        #     'gt'] if mode != 'test_prediction' and mode != 'test_completion' else None
+        data_time = time.time() - start
+
+        start = time.time()
+        if(args.input == 'rgbd'):
+            input_p = batch_data['rgbd']
+        elif(args.input == 'rgb'):
+            input_p = batch_data['rgb']
+        elif(args.input == 'd'):
+            input_p = batch_data['d']
+        # print('Evaluating')
+        pred = model(input_p)
+        # print('printing sizes')
+        # print(pred.size())
+        # print(batch_data['d'].size())
+        height = batch_data['d'].size(1)
+        width = batch_data['d'].size(2)
+        batch_data['d'] = batch_data['d'].view(-1,1,height,width)
+        depth_loss, photometric_loss, smooth_loss, mask = 0, 0, 0, None
+        if mode == 'train':
+            # Loss 1: the direct depth supervision from ground truth label
+            # mask=1 indicates that a pixel does not ground truth labels
+            if 'sparse' in args.train_mode:
+                # print('in sparse')
+                # print(pred.size())
+                # print(batch_data['d'].size())
+                depth_loss = depth_criterion(pred, batch_data['d'])
+                mask = (batch_data['d'] < 1e-3).float()
+            # elif 'dense' in args.train_mode:
+            #     depth_loss = depth_criterion(pred, gt)
+            #     mask = (gt < 1e-3).float()
+
+            # Loss 2: the self-supervised photometric loss
+            if args.use_pose:
+                # create multi-scale pyramids
+                pred_array = helper.multiscale(pred)
+                rgb_curr_array = helper.multiscale(batch_data['rgb'])
+                rgb_near_array = helper.multiscale(batch_data['rgb_near'])
+                if mask is not None:
+                    mask_array = helper.multiscale(mask)
+                num_scales = len(pred_array)
+
+                # compute photometric loss at multiple scales
+                for scale in range(len(pred_array)):
+                    pred_ = pred_array[scale]
+                    rgb_curr_ = rgb_curr_array[scale]
+                    rgb_near_ = rgb_near_array[scale]
+                    mask_ = None
+                    if mask is not None:
+                        mask_ = mask_array[scale]
+
+                    # compute the corresponding intrinsic parameters
+                    height_, width_ = pred_.size(2), pred_.size(3)
+                    intrinsics_ = kitti_intrinsics.scale(height_, width_)
+
+                    # inverse warp from a nearby frame to the current frame
+                    warped_ = homography_from(rgb_near_, pred_,
+                                              batch_data['r_mat'],
+                                              batch_data['t_vec'], intrinsics_)
+                    photometric_loss += photometric_criterion(
+                        rgb_curr_, warped_, mask_) * (2**(scale - num_scales))
+
+            # Loss 3: the depth smoothness loss
+            smooth_loss = smoothness_criterion(pred) if args.w2 > 0 else 0
+
+            # backprop
+            loss = depth_loss + args.w1 * photometric_loss + args.w2 * smooth_loss
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+        gpu_time = time.time() - start
+        print(gpu_time)
+        # measure accuracy and record loss
+        with torch.no_grad():
+            mini_batch_size = next(iter(batch_data.values())).size(0)
+            result = Result()
+            if mode != 'test_prediction' and mode != 'test_completion':
+                result.evaluate(pred.data, batch_data['d'].data, photometric_loss)
+            [
+                m.update(result, gpu_time, data_time, mini_batch_size)
+                for m in meters
+            ]
+            logger.conditional_print(mode, i, epoch, lr, len(loader),
+                                     block_average_meter, average_meter)
+            logger.conditional_save_img_comparison(mode, i, batch_data, pred,
+                                                   epoch)
+            logger.conditional_save_pred(mode, i, pred, epoch)
+
+    avg = logger.conditional_save_info(mode, average_meter, epoch)
+    is_best = logger.rank_conditional_save_best(mode, avg, epoch)
+    if is_best and not (mode == "train"):
+        logger.save_img_comparison_as_best(mode, epoch)
+    logger.conditional_summarize(mode, avg, is_best)
+
+    return avg, is_best
 def create_data_loaders(args):
     # Data loading code
-    print("=> creating data loaders ...")
-    traindir = os.path.join('data', args.data, 'train')
+    # print("=> creating data loaders ...")
+    traindir = os.path.join('data', 'kitti', 'train')
     
     if args.evaluate:
-        valdir = os.path.join('data', args.data, 'test')
+        valdir = os.path.join('data', 'kitti', 'test')
     else:
-        valdir = os.path.join('data', args.data, 'val')
+        valdir = os.path.join('data', 'kitti', 'val')
         
     train_loader = None
     val_loader = None
@@ -101,26 +315,13 @@ def create_data_loaders(args):
     elif args.sparsifier == RandomSampling.name:
         sparsifier = RandomSampling(num_samples=args.num_samples, max_depth=max_depth)    
 
-    if args.data == 'nyudepthv2':
-        from dataloaders.nyu_dataloader import NYUDataset
-        if not args.evaluate:
-            train_dataset = NYUDataset(traindir, type='train',
-                modality=args.modality, sparsifier=sparsifier)
-        val_dataset = NYUDataset(valdir, type='val',
-            modality=args.modality, sparsifier=sparsifier)
-
-    elif args.data == 'kitti' or args.data == 'kitti_small':
-        from dataloaders.kitti_dataloader import KITTIDataset
-        if not args.evaluate:
-            train_dataset = KITTIDataset(traindir, type='train',
-                modality=args.modality, sparsifier=sparsifier)
-        val_dataset = KITTIDataset(valdir, type='val',
-            modality=args.modality, sparsifier=sparsifier)
-
-    else:
-        raise RuntimeError('Dataset not found.' +
-                           'The dataset must be either of nyudepthv2 or kitti or kitti_small.')
-
+        # from dataloaders.kitti_dataloader import KITTIDataset
+    args.sparsifier = sparsifier
+    if not args.evaluate:
+        args.root = traindir
+        train_dataset = KittiDepth('train',args)
+    args.root=valdir
+    val_dataset = KittiDepth('val',args)
     # set batch size to be 1 for validation
     val_loader = torch.utils.data.DataLoader(val_dataset,
         batch_size=1, shuffle=False, num_workers=args.workers, pin_memory=True)
@@ -136,321 +337,91 @@ def create_data_loaders(args):
     print("=> data loaders created.")
     return train_loader, val_loader
 
-def main():
-    global args, best_result, output_directory, train_csv, test_csv, eval_csv
 
-    # evaluation mode
-    start_epoch = 0
+def main():
+    global args
+    args.loader = png_loader #change it when running on gcp
+    checkpoint = None
+    is_eval = False
     if args.evaluate:
-        assert os.path.isfile(args.evaluate), \
-        "=> no best model found at '{}'".format(args.evaluate)
-        print("=> loading best model '{}'".format(args.evaluate))
-        checkpoint = torch.load(args.evaluate)
-        output_directory = os.path.dirname(args.evaluate)
-        eval_csv = os.path.join(output_directory, 'eval.csv')
-        
-        with open(eval_csv, 'w') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=eval_fieldnames)
-            writer.writeheader()  
-            
-        args = checkpoint['args']
-        start_epoch = checkpoint['epoch'] + 1
-        best_result = checkpoint['best_result']
-        model = checkpoint['model']
-        print("=> loaded best model (epoch {})".format(checkpoint['epoch']))
-        args.evaluate = True
-        for num_samples in range(2,9):
-            args.num_samples = int(10 ** (num_samples/2))
-            _, val_loader = create_data_loaders(args)
-            validate(val_loader, model, checkpoint['epoch'], write_to_file=True)
-            
-        plot_results()    
+        args_new = args
+        if os.path.isfile(args.evaluate):
+            print("=> loading checkpoint '{}' ... ".format(args.evaluate),
+                  end='')
+            checkpoint = torch.load(args.evaluate, map_location=device)
+            args = checkpoint['args']
+            args.data_folder = args_new.data_folder
+            args.val = args_new.val
+            is_eval = True
+            print("Completed.")
+        else:
+            print("No model found at '{}'".format(args.evaluate))
+            return
+    elif args.resume:  # optionally resume from a checkpoint
+        args_new = args
+        if os.path.isfile(args.resume):
+            print("=> loading checkpoint '{}' ... ".format(args.resume),
+                  end='')
+            checkpoint = torch.load(args.resume, map_location=device)
+            args.start_epoch = checkpoint['epoch'] + 1
+            args.data_folder = args_new.data_folder
+            args.val = args_new.val
+            print("Completed. Resuming from epoch {}.".format(
+                checkpoint['epoch']))
+        else:
+            print("No checkpoint found at '{}'".format(args.resume))
+            return
+    # Data loading code
+    print("=> creating data loaders ... ")
+    if not is_eval:
+      train_loader,val_loader = create_data_loaders(args)
+    print("=> creating model and optimizer ... ", end='')
+    args.output_size = train_loader.dataset.output_size
+    model = VGGNet(args).to(device)
+    model_named_params = [
+        p for _, p in model.named_parameters() if p.requires_grad
+    ]
+    optimizer = torch.optim.Adam(model_named_params,
+                                 lr=args.lr,
+                                 weight_decay=args.weight_decay)
+    print("completed.")
+    if checkpoint is not None:
+        model.load_state_dict(checkpoint['model'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        print("=> checkpoint state loaded.")
+
+    model = torch.nn.DataParallel(model)
+
+
+    # create backups and results folder
+    logger = helper.logger(args)
+    if checkpoint is not None:
+        logger.best_result = checkpoint['best_result']
+    print("=> logger created.")
+
+    if is_eval:
+        print("=> starting model evaluation ...")
+        result, is_best = iterate("val", args, val_loader, model, None, logger,
+                                  checkpoint['epoch'])
         return
 
-    # optionally resume from a checkpoint
-    elif args.resume:
-        chkpt_path = args.resume
-        assert os.path.isfile(chkpt_path), \
-            "=> no checkpoint found at '{}'".format(chkpt_path)
-        print("=> loading checkpoint '{}'".format(chkpt_path))
-        checkpoint = torch.load(chkpt_path)
-        args = checkpoint['args']
-        start_epoch = checkpoint['epoch'] + 1
-        best_result = checkpoint['best_result']
-        model = checkpoint['model']
-        optimizer = checkpoint['optimizer']
-        output_directory = os.path.dirname(os.path.abspath(chkpt_path))
-        print("=> loaded checkpoint (epoch {})".format(checkpoint['epoch']))
-        train_loader, val_loader = create_data_loaders(args)
-        args.resume = True
+    # main loop
+    print("=> starting main loop ...")
+    for epoch in range(args.start_epoch, args.epochs):
+        print('-----------------------------------------------------------------')
+        print("=> starting training epoch {} ..".format(epoch))
+        iterate("train", args, train_loader, model, optimizer, logger,
+                epoch)  # train for one epoch
+        result, is_best = iterate("val", args, val_loader, model, None, logger,
+                                  epoch)  # evaluate on validation set
+        helper.save_checkpoint({ # save checkpoint
+            'epoch': epoch,
+            'model': model.module.state_dict(),
+            'best_result': logger.best_result,
+            'optimizer' : optimizer.state_dict(),
+            'args' : args,
+        }, is_best, epoch, logger.output_directory)
 
-    # create new model
-    else:
-        train_loader, val_loader = create_data_loaders(args)
-        print("=> creating Model ({}-{}) ...".format(args.arch, args.decoder))
-        in_channels = len(args.modality)
-        if args.arch == 'resnet50':
-            model = ResNet(layers=50, decoder=args.decoder, output_size=train_loader.dataset.output_size,
-                in_channels=in_channels, pretrained=args.pretrained)
-        elif args.arch == 'resnet18':
-            model = ResNet(layers=18, decoder=args.decoder, output_size=train_loader.dataset.output_size,
-                in_channels=in_channels, pretrained=args.pretrained)
-        elif args.arch == 'vgg16':
-        	model = VGGNet(layers=16, decoder=args.decoder, output_size=train_loader.dataset.output_size,
-                in_channels=in_channels, pretrained=args.pretrained)
-        elif args.arch == 'vgg19':
-          model = VGGNet(layers=19, decoder=args.decoder, output_size=train_loader.dataset.output_size,
-                in_channels=in_channels, pretrained=args.pretrained)
-        print("=> model created.")
-        #change here
-        optimizer = torch.optim.SGD(model.parameters(), args.lr, \
-            momentum=args.momentum, weight_decay=args.weight_decay)
-
-        # model = torch.nn.DataParallel(model).cuda() # for multi-gpu training
-        model = model.to(device)
-
-    # create results folder, if not already exists
-    output_directory = utils.get_output_directory(args)
-    if not os.path.exists(output_directory):
-        os.makedirs(output_directory)
-    train_csv = os.path.join(output_directory, 'train.csv')
-    test_csv = os.path.join(output_directory, 'test.csv')
-    best_txt = os.path.join(output_directory, 'best.txt')
-
-    # create new csv files with only header
-    if not args.resume:
-        with open(train_csv, 'w') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-        with open(test_csv, 'w') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-         
-
-    for epoch in range(start_epoch, args.epochs):
-      # epoch=start_epoch
-      # print(epoch)
-      utils.adjust_learning_rate(optimizer, epoch, args.lr)
-      train(train_loader, model, optimizer, epoch) # train for one epoch
-      result, img_merge = validate(val_loader, model, epoch) # evaluate on validation set
-
-      # remember best rmse and save checkpoint
-      is_best = result.rmse < best_result.rmse
-      if is_best:
-          best_result = result
-          with open(best_txt, 'w') as txtfile:
-              txtfile.write("epoch={}\nmse={:.3f}\nrmse={:.3f}\nabsrel={:.3f}\nlg10={:.3f}\nmae={:.3f}\ndelta1={:.3f}\nt_gpu={:.4f}\n".
-                  format(epoch, result.mse, result.rmse, result.absrel, result.lg10, result.mae, result.delta1, result.gpu_time))
-          if img_merge is not None:
-              img_filename = output_directory + '/comparison_best.png'
-              utils.save_image(img_merge, img_filename)
-
-      utils.save_checkpoint({
-          'args': args,
-          'epoch': epoch,
-          'arch': args.arch,
-          'model': model,
-          'best_result': best_result,
-          'optimizer' : optimizer,
-      }, is_best, epoch, output_directory)
-
-
-def train(train_loader, model, optimizer, epoch):
-    # print('training....')
-    block_average_meter = AverageMeter()
-    average_meter = AverageMeter()
-    meters = [block_average_meter, average_meter]
-    model.train() # switch to train mode
-    end = time.time()
-    for i, (input, target,near,r_mat,t_vec) in enumerate(train_loader):
-
-        input, target = input.to(device), target.to(device)
-        torch.cuda.synchronize()
-        #time to load the data
-        data_time = time.time() - end
-
-        # compute pred
-        end = time.time()
-        pred = model(input)
-        depth_loss, photometric_loss, smooth_loss, mask = 0, 0, 0, None
-        # loss = criterion(pred, target)
-        # Loss 1:depth loss
-        depth_loss = depth_criterion(pred,target)
-        mask = (target<1e-3).float() #not specified why
-        # Loss 2: the self-supervised photometric loss
-        if args.use_pose:
-            # create multi-scale pyramids
-            pred_array = helper.multiscale(pred)
-            rgb_curr_array = helper.multiscale(input)
-            # how to get the near rgb frame (the next one)
-            rgb_near_array = helper.multiscale(near)
-            if mask is not None:
-                mask_array = helper.multiscale(mask)
-            num_scales = len(pred_array)
-
-            # compute photometric loss at multiple scales
-            for scale in range(len(pred_array)):
-                pred_ = pred_array[scale]
-                rgb_curr_ = rgb_curr_array[scale]
-                rgb_near_ = rgb_near_array[scale]
-                mask_ = None
-                if mask is not None:
-                    mask_ = mask_array[scale]
-
-                # compute the corresponding intrinsic parameters
-                height_, width_ = pred_.size(2), pred_.size(3)
-                intrinsics_ = kitti_intrinsics.scale(height_, width_)
-
-                # inverse warp from a nearby frame to the current frame
-                warped_ = homography_from(rgb_near_, pred_,
-                                            r_mat,
-                                            t_vec, intrinsics_)
-                photometric_loss += photometric_criterion(
-                    rgb_curr_, warped_, mask_) * (2**(scale - num_scales))
-
-        # Loss 3: the depth smoothness loss
-        smooth_loss = smoothness_criterion(pred) if args.w2 > 0 else 0
-
-        # backprop
-        loss = depth_loss + args.w1 * photometric_loss + args.w2 * smooth_loss
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        # torch.cuda.synchronize()
-        gpu_time = time.time() - end
-
-        # measure accuracy and record loss
-        result = Result()
-        result.evaluate(pred.data, target.data)
-        average_meter.update(result, gpu_time, data_time, input.size(0))
-        end = time.time()
-
-        if (i + 1) % args.print_freq == 0:
-            #print('=> output: {}'.format(output_directory))
-            print('Train Epoch: {0} [{1}/{2}]\t'
-                  't_Data={data_time:.3f}({average.data_time:.3f}) '
-                  't_GPU={gpu_time:.3f}({average.gpu_time:.3f})\n\t'
-                  'RMSE={result.rmse:.2f}({average.rmse:.2f}) '
-                  'MAE={result.mae:.2f}({average.mae:.2f}) '
-                  'Delta1={result.delta1:.3f}({average.delta1:.3f}) '
-                  'REL={result.absrel:.3f}({average.absrel:.3f}) '
-                  'Lg10={result.lg10:.3f}({average.lg10:.3f}) '.format(
-                  epoch, i+1, len(train_loader), data_time=data_time,
-                  gpu_time=gpu_time, result=result, average=average_meter.average()))
-
-    avg = average_meter.average()
-    with open(train_csv, 'a') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writerow({'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel, 'lg10': avg.lg10,
-            'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3,
-            'gpu_time': avg.gpu_time, 'data_time': avg.data_time})
-
-
-def validate(val_loader, model, epoch, write_to_file=True):
-    
-    print("=> Evaluating for no. of samples = ", args.num_samples)
-    
-    average_meter = AverageMeter()
-    model.eval() # switch to evaluate mode
-    end = time.time()
-    img_merge = None
-    for i, (input, target) in enumerate(val_loader):
-        input, target = input.to(device), target.to(device)
-        torch.cuda.synchronize() #This is needed only if we want to compute the time
-        data_time = time.time() - end
-
-        # compute output
-        end = time.time()
-        with torch.no_grad():
-            pred = model(input)
-        torch.cuda.synchronize() #This is needed only if we want to compute the time
-        gpu_time = time.time() - end
-
-        # measure accuracy and record loss
-        result = Result()
-        result.evaluate(pred.data, target.data)
-        average_meter.update(result, gpu_time, data_time, input.size(0))
-        end = time.time()
-
-        
-        # save 8 images for visualization
-        if not args.evaluate:
-            skip = 50
-            if args.modality == 'd':
-                img_merge = None
-            else:
-                if args.modality == 'rgb':
-                    rgb = input
-                elif args.modality == 'rgbd':
-                    rgb = input[:,:3,:,:]
-                    depth = input[:,3:,:,:]
-
-
-
-                if i == 0:
-                    if args.modality == 'rgbd':
-                        img_merge = utils.merge_into_row_with_gt(rgb, depth, target, pred)
-                    else:
-                        img_merge = utils.merge_into_row(rgb, target, pred)
-                elif (i < 8*skip) and (i % skip == 0):
-                    if args.modality == 'rgbd':
-                        row = utils.merge_into_row_with_gt(rgb, depth, target, pred)
-                    else:
-                        row = utils.merge_into_row(rgb, target, pred)
-                    img_merge = utils.add_row(img_merge, row)
-                elif i == 8*skip:
-                    filename = output_directory + '/comparison_' + str(epoch) + '.png'
-                    utils.save_image(img_merge, filename)
-
-        if (i+1) % args.print_freq == 0:
-            print('Test: [{0}/{1}]\t'
-                  't_GPU={gpu_time:.3f}({average.gpu_time:.3f})\n\t'
-                  'RMSE={result.rmse:.2f}({average.rmse:.2f}) '
-                  'MAE={result.mae:.2f}({average.mae:.2f}) '
-                  'Delta1={result.delta1:.3f}({average.delta1:.3f}) '
-                  'REL={result.absrel:.3f}({average.absrel:.3f}) '
-                  'Lg10={result.lg10:.3f}({average.lg10:.3f}) '.format(
-                   i+1, len(val_loader), gpu_time=gpu_time, result=result, average=average_meter.average()))
-
-    avg = average_meter.average()
-
-    print('\n*\n'
-        'RMSE={average.rmse:.3f}\n'
-        'MAE={average.mae:.3f}\n'
-        'Delta1={average.delta1:.3f}\n'
-        'REL={average.absrel:.3f}\n'
-        'Lg10={average.lg10:.3f}\n'
-        't_GPU={time:.3f}\n'.format(
-        average=avg, time=avg.gpu_time))
-
-    if write_to_file:
-        if args.evaluate:
-            with open(eval_csv, 'a') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=eval_fieldnames)
-                writer.writerow({'num_samples': args.num_samples, 'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel,  'lg10': avg.lg10, 'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3, 'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
-                
-        else:
-            with open(test_csv, 'a') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writerow({'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel, 'lg10': avg.lg10,
-                    'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3,
-                    'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
-            
-                
-    return avg, img_merge
-
-def plot_results():
-    
-    df = pd.read_csv( eval_csv)
-    for y in ['rmse', 'absrel', 'delta1', 'delta2']:
-        fig = plt.figure()
-        plt.plot( np.log10(df['num_samples']) , df[y])
-        plt.xlabel('Log of no. of samples')
-        plt.ylabel(y)
-        fig_path = os.path.join(output_directory, y)
-        plt.savefig( fig_path)  
-    
 
 if __name__ == '__main__':
     main()
