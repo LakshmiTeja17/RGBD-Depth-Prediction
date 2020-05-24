@@ -1,0 +1,12 @@
+remove 7x7 in resnet?
+
+change default args: done
+/255 reqd in train_transform?: done
+make sparse 3d before returning in __get item __ of dataloader: done
+sparsify depth in __get item __: done
+add gt key in candidates: done
+num_workers for val_loader in main.py:done
+uncomment the batch_data['gt'] in main.py: done
+add None condition in h5_loader and png_loader: done
+modality: input: done
+

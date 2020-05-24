@@ -6,7 +6,7 @@ import torch
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
-from dataloaders.kitti_loader import load_calib, oheight, owidth, input_options, KittiDepth,png_loader
+from dataloaders.kitti_loader import load_calib, oheight, owidth, input_options, KittiDepth,png_loader, h5_loader
 from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo, RandomSampling
 from model import VGGNet
 from model import Decoder
@@ -15,23 +15,24 @@ import criteria
 import helper
 from inverse_warp import Intrinsics, homography_from
 
-model_names = ['resnet18', 'resnet50', 'vgg16','vgg19']
+model_names = ['resnet','vgg']
 loss_names = ['l1', 'l2']
 data_names = ['nyudepthv2', 'kitti', 'kitti_small']
 sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo, RandomSampling]]
 decoder_names = Decoder.names
 parser = argparse.ArgumentParser(description='Sparse-to-Dense')
+
 parser.add_argument('-w',
                     '--workers',
-                    default=4,
+                    default=10,
                     type=int,
                     metavar='N',
-                    help='number of data loading workers (default: 4)')
+                    help='number of data loading workers (default: 10)')
 parser.add_argument('--epochs',
-                    default=11,
+                    default=15,
                     type=int,
                     metavar='N',
-                    help='number of total epochs to run (default: 11)')
+                    help='number of total epochs to run (default: 15)')
 parser.add_argument('--start-epoch',
                     default=0,
                     type=int,
@@ -46,9 +47,9 @@ parser.add_argument('-c',
                     ' (default: l2)')
 parser.add_argument('-b',
                     '--batch-size',
-                    default=2,
+                    default=8,
                     type=int,
-                    help='mini-batch size (default: 2)')
+                    help='mini-batch size (default: 8)')
 parser.add_argument('--lr',
                     '--learning-rate',
                     default=1e-5,
@@ -87,7 +88,7 @@ parser.add_argument('-l',
                     '--layers',
                     type=int,
                     default=16,
-                    help='use 16 for sparse_conv; use 18 or 34 for resnet')
+                    help='use 16 or 19 for vgg; use 18 or 34 for resnet')
 parser.add_argument('--pretrained',
                     action="store_true",
                     help='use ImageNet pre-trained weights')
@@ -113,6 +114,8 @@ parser.add_argument(
     default="sparse+photo",
     choices=["dense", "sparse", "photo", "sparse+photo", "dense+photo"],
     help='dense | sparse | photo | sparse+photo | dense+photo')
+
+
 parser.add_argument('--cpu', action="store_true", help='run on cpu')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18', choices=model_names,
                     help='model architecture: ' + ' | '.join(model_names) + ' (default: resnet18)')
@@ -134,8 +137,9 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', type=str, default='',
 parser.add_argument('--no-pretrain', dest='pretrained', action='store_false',
                     help='not to use ImageNet pre-trained weights')
 parser.set_defaults(pretrained=True)
+
+
 args = parser.parse_args()
-print(args.train_mode)
 args.use_pose = ("photo" in args.train_mode)
 # args.pretrained = not args.no_pretrained
 args.result = os.path.join('results')
@@ -295,13 +299,13 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
 def create_data_loaders(args):
     # Data loading code
     # print("=> creating data loaders ...")
-    traindir = os.path.join('data', 'kitti', 'train')
-    
+    traindir = os.path.join('data', args.data, 'train')
+
     if args.evaluate:
-        valdir = os.path.join('data', 'kitti', 'test')
+        valdir = os.path.join('data', args.data, 'test')
     else:
-        valdir = os.path.join('data', 'kitti', 'val')
-        
+        valdir = os.path.join('data', args.data, 'val')
+
     train_loader = None
     val_loader = None
 
@@ -313,7 +317,7 @@ def create_data_loaders(args):
     elif args.sparsifier == SimulatedStereo.name:
         sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
     elif args.sparsifier == RandomSampling.name:
-        sparsifier = RandomSampling(num_samples=args.num_samples, max_depth=max_depth)    
+        sparsifier = RandomSampling(num_samples=args.num_samples, max_depth=max_depth)
 
         # from dataloaders.kitti_dataloader import KITTIDataset
     args.sparsifier = sparsifier
@@ -340,7 +344,7 @@ def create_data_loaders(args):
 
 def main():
     global args
-    args.loader = png_loader #change it when running on gcp
+    args.loader = h5_loader #change it when running on gcp
     checkpoint = None
     is_eval = False
     if args.evaluate:
@@ -371,13 +375,18 @@ def main():
         else:
             print("No checkpoint found at '{}'".format(args.resume))
             return
+
     # Data loading code
     print("=> creating data loaders ... ")
     if not is_eval:
-      train_loader,val_loader = create_data_loaders(args)
+      train_loader, val_loader = create_data_loaders(args)
+
     print("=> creating model and optimizer ... ", end='')
     args.output_size = train_loader.dataset.output_size
-    model = VGGNet(args).to(device)
+
+    if args.arch == 'vgg':
+        model = VGGNet(args).to(device)
+
     model_named_params = [
         p for _, p in model.named_parameters() if p.requires_grad
     ]

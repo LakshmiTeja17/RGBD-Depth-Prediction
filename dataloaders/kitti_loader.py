@@ -54,13 +54,15 @@ def png_loader(rgb_path, depth_path):
     return rgb, depth
 
 def h5_loader(path):
+
+    if path is None:
+        return None, None
+
     h5f = h5py.File(path, "r")
     rgb = np.array(h5f['rgb'])
     rgb = np.transpose(rgb, (1, 2, 0)) #HXWXC
     depth = np.array(h5f['depth'])
     return rgb, depth
-
-to_tensor = transforms.ToTensor()
 
 def load_calib():
     """
@@ -119,7 +121,7 @@ def load_calib():
 #             )
 #             def get_rgb_paths(p):
 #                 ps = p.split('/')
-#                 pnew = '/'.join(ps[:-7] +  
+#                 pnew = '/'.join(ps[:-7] +
 #                     ['data_rgb']+ps[-6:-4]+ps[-2:-1]+['data']+ps[-1:])
 #                 return pnew
 #         elif args.val == "select":
@@ -155,10 +157,10 @@ def load_calib():
 
 #     if glob_gt is not None:
 #         # train or val-full or val-select
-#         paths_d = sorted(glob.glob(glob_d)) 
-#         paths_gt = sorted(glob.glob(glob_gt)) 
+#         paths_d = sorted(glob.glob(glob_d))
+#         paths_gt = sorted(glob.glob(glob_gt))
 #         paths_rgb = [get_rgb_paths(p) for p in paths_gt]
-#     else:  
+#     else:
 #         # test only has d or rgb
 #         paths_rgb = sorted(glob.glob(glob_rgb))
 #         paths_gt = [None] * len(paths_rgb)
@@ -368,11 +370,11 @@ class KittiDepth(data.Dataset):
             imgs = make_dataset_png(args.root)
         if(args.loader == h5_loader):
             imgs = make_dataset_h5(args.root)
-            
+
 #         if(type == val and len(imgs) > 3200):
 #             np.random.shuffle(imgs)
 #             imgs = imgs[:3200]
-            
+
         assert len(imgs)>0, "Found 0 images in subfolders of: " + args.root + "\n"
         print("Found {} images in {} folder.".format(len(imgs), type))
         self.imgs = imgs

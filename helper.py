@@ -253,8 +253,8 @@ def get_folder_name(args):
     else:
         prefix = "mode={}.".format(args.train_mode)
     return os.path.join(args.result,
-        prefix + 'input={}.vgg{}.criterion={}.lr={}.bs={}.wd={}.pretrained={}.jitter={}.time={}'.
-        format(args.input, args.layers, args.criterion, \
+        prefix + 'input={}.arch={}.layers={}.criterion={}.lr={}.bs={}.wd={}.pretrained={}.jitter={}.time={}'.
+        format(args.input, args.arch, args.layers, args.criterion, \
             args.lr, args.batch_size, args.weight_decay, \
             args.pretrained, args.jitter, current_time
             ))

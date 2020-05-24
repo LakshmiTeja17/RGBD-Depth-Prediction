@@ -13,7 +13,7 @@ def parse_command():
     data_names = ['nyudepthv2', 'kitti', 'kitti_small']
     from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo, RandomSampling
     sparsifier_names = [x.name for x in [UniformSampling, SimulatedStereo, RandomSampling]]
-    from models import Decoder
+    from model import Decoder
     decoder_names = Decoder.names
     from dataloaders.dataloader import MyDataloader
     modality_names = MyDataloader.modality_names
