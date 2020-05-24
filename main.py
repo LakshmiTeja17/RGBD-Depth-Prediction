@@ -47,7 +47,7 @@ parser.add_argument('-c',
                     ' (default: l2)')
 parser.add_argument('-b',
                     '--batch-size',
-                    default=8,
+                    default=16,
                     type=int,
                     help='mini-batch size (default: 8)')
 parser.add_argument('--lr',
@@ -117,7 +117,7 @@ parser.add_argument(
 
 
 parser.add_argument('--cpu', action="store_true", help='run on cpu')
-parser.add_argument('--arch', '-a', metavar='ARCH', default='resnet18', choices=model_names,
+parser.add_argument('--arch', '-a', metavar='ARCH', default='vgg', choices=model_names,
                     help='model architecture: ' + ' | '.join(model_names) + ' (default: resnet18)')
 parser.add_argument('--data', metavar='DATA', default='kitti',
                     choices=data_names,
@@ -193,7 +193,6 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
         lr = 0
 
     for i, batch_data in enumerate(loader):
-        print('Iterating.....')
         start = time.time()
         batch_data = {
             key: val.to(device)
@@ -210,11 +209,9 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
             input_p = batch_data['rgb']
         elif(args.input == 'd'):
             input_p = batch_data['d']
-        # print('Evaluating')
+        
         pred = model(input_p)
-        # print('printing sizes')
-        # print(pred.size())
-        # print(batch_data['d'].size())
+        
         height = batch_data['d'].size(1)
         width = batch_data['d'].size(2)
         batch_data['d'] = batch_data['d'].view(-1,1,height,width)
@@ -224,8 +221,9 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
             # mask=1 indicates that a pixel does not ground truth labels
             if 'sparse' in args.train_mode:
                 # print('in sparse')
-                # print(pred.size())
-                # print(batch_data['d'].size())
+                #print(pred)
+                #print("----------------------")
+                #print(batch_data['d'])
                 depth_loss = depth_criterion(pred, batch_data['d'])
                 mask = (batch_data['d'] < 1e-3).float()
             # elif 'dense' in args.train_mode:
@@ -272,7 +270,6 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
             optimizer.step()
 
         gpu_time = time.time() - start
-        print(gpu_time)
         # measure accuracy and record loss
         with torch.no_grad():
             mini_batch_size = next(iter(batch_data.values())).size(0)

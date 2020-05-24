@@ -129,6 +129,6 @@ def homography_from(rgb_near, depth_curr, r_mat, t_vec, intrinsics):
     pixel_coords_near = pointcloud_to_image(pointcloud_near, intrinsics)
 
     # the warping
-    warped = F.grid_sample(rgb_near, pixel_coords_near)
+    warped = F.grid_sample(rgb_near, pixel_coords_near, align_corners = True)
 
     return warped

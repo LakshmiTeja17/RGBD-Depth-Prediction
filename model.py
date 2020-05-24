@@ -235,7 +235,7 @@ class VGGNet(nn.Module):
             new_features[0] = conv2d
             self.features = new_features
 
-        self.output_size = (375,1242)
+        self.output_size = args.output_size
 
         # clear memory
         del pretrained_model

@@ -52,7 +52,7 @@ class PhotometricLoss(nn.Module):
                                                           > 0).float()
         if mask is not None:
             valid_mask = valid_mask * torch.squeeze(mask).float()
-        valid_mask = valid_mask.byte().detach()
+        valid_mask = valid_mask.bool().detach()
         if valid_mask.numel() > 0:
             diff = diff[valid_mask]
             if diff.nelement() > 0:

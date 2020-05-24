@@ -249,17 +249,15 @@ def train_transform(rgb, sparse, rgb_near, args):
     #     if rgb_near is not None:
     #         rgb_near = transform_rgb(rgb_near)
     # # sparse = drop_depth_measurements(sparse, 0.9)
+    
+    color_jitter = transforms.ColorJitter(0.4, 0.4, 0.4)
+    
     s = np.random.uniform(1.0,1.5)
     depth_np = sparse/s
     angle = np.random.uniform(-5.0,5.0)
     do_flip = np.random.uniform(0.0,1.0)<0.5
-    brightness = np.random.uniform(max(0, 1 - args.jitter),
-                                   1 + args.jitter)
-    contrast = np.random.uniform(max(0, 1 - args.jitter), 1 + args.jitter)
-    saturation = np.random.uniform(max(0, 1 - args.jitter),
-                                   1 + args.jitter)
+   
     transform = transforms.Compose([
-      transforms.ColorJitter(brightness,contrast,saturation,0),
       transforms.Crop(130,10,220,1200),
       transforms.Rotate(angle),
       transforms.Resize(s),
@@ -267,17 +265,23 @@ def train_transform(rgb, sparse, rgb_near, args):
       transforms.HorizontalFlip(do_flip)
     ])
     rgb_np = transform(rgb)
-    # rgb_np = self.color_jitter(rgb_np) # random color jittering
+    #print("transformed rgb1\n")
+    rgb_np = color_jitter(rgb_np) # random color jittering
     rgb_np = np.asfarray(rgb_np, dtype='float') / 255	#Why do this??
     # Scipy affine_transform produced RuntimeError when the depth map was
     # given as a 'numpy.ndarray'
     if(rgb_near is not None):
       rgb_near = transform(rgb_near)
-      # rgb_near = self.color_jitter(rgb_near)
+      #print("transformed rgb2\n")
+      rgb_near = color_jitter(rgb_near)
       rgb_near = np.asfarray(rgb_near,dtype='float')/255
-    depth_np = np.asfarray(sparse, dtype='float32')
-    depth_np = transform(sparse)
-    return rgb, sparse, rgb_near
+        
+    
+    depth_np = np.asfarray(sparse, dtype='float32') /255
+    #print( depth_np.shape, rgb_np.shape)
+    depth_np = transform(depth_np)
+    #print("transformed depth\n")
+    return rgb_np , depth_np, rgb_near
 
 
 def val_transform(rgb, sparse, rgb_near, args):
@@ -289,7 +293,7 @@ def val_transform(rgb, sparse, rgb_near, args):
         rgb = transform(rgb)
         rgb = np.asfarray(rgb,dtype='float')/255
     if sparse is not None:
-        sparse = np.asfarray(sparse,dtype='float')
+        sparse = np.asfarray(sparse,dtype='float')/ 255
         sparse = transform(sparse)
     if rgb_near is not None:
         rgb_near = transform(rgb_near)
@@ -320,43 +324,36 @@ def handle_gray(rgb, args):
         return rgb_ret, img
 
 
-def get_rgb_near(path, args):
-    assert path is not None, "path is None"
-
-    # def extract_frame_id(filename):
-    #     head, tail = os.path.split(filename)
-    #     number_string = tail[0:tail.find('.')]
-    #     number = int(number_string)
-    #     return head, number
-
-    # def get_nearby_filename(filename, new_id):
-    #     head, _ = os.path.split(filename)
-    #     new_filename = os.path.join(head, '%010d.png' % new_id)
-    #     return new_filename
-    def extract_frame_id(filename):
-        head,tail = os.path.split(filename)
-        extension = tail[tail.find('.'):]
-        tail = tail[0:tail.find('.')]
-        number = int(tail[-10:])
-        remaining = tail[:-10]
-        return os.path.join(head,remaining),number,extension
-    def get_nearby_filename(string,new_id,extension):
-        tmp_string = string
-        tmp_string = tmp_string+'%010d'%new_id+extension
-        return tmp_string
-    head, number,extension = extract_frame_id(path)
-    count = 0
+def get_rgb_near(imgs,index, args):
+    
     max_frame_diff = 3
     candidates = [
         i - max_frame_diff for i in range(max_frame_diff * 2 + 1)
         if i - max_frame_diff != 0
     ]
+    
+    if args.loader == png_loader:
+        head1,_ = os.path.split(imgs[index][0])
+    
+    if args.loader == h5_loader:
+        head1,_ = os.path.split(imgs[index])
+    
     while True:
         random_offset = choice(candidates)
-        path_near = get_nearby_filename(head, number + random_offset,extension)
-        if os.path.exists(path_near):
+        if( (index + random_offset) >= len(imgs) ):
+            continue
+            
+        path_near = imgs[index + random_offset]
+        
+        if args.loader == png_loader:
+            head2,_ = os.path.split(imgs[index][0])
+    
+        if args.loader == h5_loader:
+            head2,_ = os.path.split(imgs[index])
+        
+        if os.path.exists(path_near) and head2 == head1:
             break
-        assert count < 20, "cannot find a nearby frame in 20 trials for {}".format(path)
+        
 
     return path_near
 
@@ -376,7 +373,7 @@ class KittiDepth(data.Dataset):
 #             imgs = imgs[:3200]
 
         assert len(imgs)>0, "Found 0 images in subfolders of: " + args.root + "\n"
-        print("Found {} images in {} folder.".format(len(imgs), type))
+        print("Found {} images in {} folder.".format(len(imgs), args.root))
         self.imgs = imgs
 
         if split == 'train':
@@ -425,13 +422,13 @@ class KittiDepth(data.Dataset):
         if self.loader == png_loader:
             rgb_path, depth_path = self.imgs[index]
             rgb, depth = self.loader(rgb_path, depth_path)
-            rgb_near_path = get_rgb_near(self.imgs[index][0],self.args) if\
+            rgb_near_path = get_rgb_near(self.imgs,index,self.args) if\
                 self.split == 'train' and self.args.use_pose else None
             rgb_near,_ = self.loader(rgb_near_path,None)
         if self.loader == h5_loader:
             path = self.imgs[index]
             rgb, depth = self.loader(path)
-            rgb_near_path = get_rgb_near(self.imgs[index][0],self.args) if\
+            rgb_near_path = get_rgb_near(self.imgs, index,self.args) if\
                 self.split == 'train' and self.args.use_pose else None
             rgb_near,_ = self.loader(rgb_near_path)
         return rgb, depth, rgb_near
@@ -451,7 +448,9 @@ class KittiDepth(data.Dataset):
                 rgb_near = rgb
                 t_vec = np.zeros((3, 1))
                 r_mat = np.eye(3)
-        rgb, gray = handle_gray(rgb, self.args)
+        #rgb, gray = handle_gray(rgb, self.args)
+        gray = None
+        
         candidates = {"rgb":rgb, "d":sparse, \
             "g":gray, "r_mat":r_mat, "t_vec":t_vec, "rgb_near":rgb_near,"rgbd":self.create_rgbd(rgb,sparse)}
         items = {
