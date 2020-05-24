@@ -31,7 +31,7 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 cudnn.benchmark = True
 
-from models import ResNet, VGGNet
+from models import ResNet, VGGNet, VGGSkipNet
 from metrics import AverageMeter, Result
 from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo, RandomSampling
 import criteria
@@ -56,12 +56,12 @@ def create_data_loaders(args):
     # Data loading code
     print("=> creating data loaders ...")
     traindir = os.path.join('data', args.data, 'train')
-    
+
     if args.evaluate:
         valdir = os.path.join('data', args.data, 'test')
     else:
         valdir = os.path.join('data', args.data, 'val')
-        
+
     train_loader = None
     val_loader = None
 
@@ -73,7 +73,7 @@ def create_data_loaders(args):
     elif args.sparsifier == SimulatedStereo.name:
         sparsifier = SimulatedStereo(num_samples=args.num_samples, max_depth=max_depth)
     elif args.sparsifier == RandomSampling.name:
-        sparsifier = RandomSampling(num_samples=args.num_samples, max_depth=max_depth)    
+        sparsifier = RandomSampling(num_samples=args.num_samples, max_depth=max_depth)
 
     if args.data == 'nyudepthv2':
         from dataloaders.nyu_dataloader import NYUDataset
@@ -122,11 +122,11 @@ def main():
         checkpoint = torch.load(args.evaluate)
         output_directory = os.path.dirname(args.evaluate)
         eval_csv = os.path.join(output_directory, 'eval.csv')
-        
+
         with open(eval_csv, 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=eval_fieldnames)
-            writer.writeheader()  
-            
+            writer.writeheader()
+
         args = checkpoint['args']
         start_epoch = checkpoint['epoch'] + 1
         best_result = checkpoint['best_result']
@@ -137,8 +137,8 @@ def main():
             args.num_samples = int(10 ** (num_samples/2))
             _, val_loader = create_data_loaders(args)
             validate(val_loader, model, checkpoint['epoch'], write_to_file=True)
-            
-        plot_results()    
+
+        plot_results()
         return
 
     # optionally resume from a checkpoint
@@ -175,6 +175,9 @@ def main():
         elif args.arch == 'vgg19':
           model = VGGNet(layers=19, decoder=args.decoder, output_size=train_loader.dataset.output_size,
                 in_channels=in_channels, pretrained=args.pretrained)
+        elif args.arch == 'vgg16_skip':
+              model = VGGSkipNet(layers=16, decoder=args.decoder, output_size=train_loader.dataset.output_size,
+                in_channels=in_channels, pretrained=args.pretrained)
         print("=> model created.")
         #change here
         optimizer = torch.optim.SGD(model.parameters(), args.lr, \
@@ -205,7 +208,7 @@ def main():
         with open(test_csv, 'w') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
-         
+
 
     for epoch in range(start_epoch, args.epochs):
       # epoch=start_epoch
@@ -285,9 +288,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
 
 def validate(val_loader, model, epoch, write_to_file=True):
-    
+
     print("=> Evaluating for no. of samples = ", args.num_samples)
-    
+
     average_meter = AverageMeter()
     model.eval() # switch to evaluate mode
     end = time.time()
@@ -310,7 +313,7 @@ def validate(val_loader, model, epoch, write_to_file=True):
         average_meter.update(result, gpu_time, data_time, input.size(0))
         end = time.time()
 
-        
+
         # save 8 images for visualization
         if not args.evaluate:
             skip = 50
@@ -366,19 +369,19 @@ def validate(val_loader, model, epoch, write_to_file=True):
             with open(eval_csv, 'a') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=eval_fieldnames)
                 writer.writerow({'num_samples': args.num_samples, 'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel,  'lg10': avg.lg10, 'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3, 'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
-                
+
         else:
             with open(test_csv, 'a') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writerow({'mse': avg.mse, 'rmse': avg.rmse, 'absrel': avg.absrel, 'lg10': avg.lg10,
                     'mae': avg.mae, 'delta1': avg.delta1, 'delta2': avg.delta2, 'delta3': avg.delta3,
                     'data_time': avg.data_time, 'gpu_time': avg.gpu_time})
-            
-                
+
+
     return avg, img_merge
 
 def plot_results():
-    
+
     df = pd.read_csv( eval_csv)
     for y in ['rmse', 'absrel', 'delta1', 'delta2']:
         fig = plt.figure()
@@ -386,8 +389,8 @@ def plot_results():
         plt.xlabel('Log of no. of samples')
         plt.ylabel(y)
         fig_path = os.path.join(output_directory, y)
-        plt.savefig( fig_path)  
-    
+        plt.savefig( fig_path)
+
 
 if __name__ == '__main__':
     main()

@@ -54,10 +54,23 @@ class Decoder(nn.Module):
         self.layer4 = None
 
     def forward(self, x):
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        if isinstance(x, tuple):
+            outs, x = x
+            x = self.layer1(x)
+            x = torch.cat((x, outs[-2]), 1)
+            x = self.layer2(x)
+            x = torch.cat((x, outs[-3]), 1)
+            x = self.layer3(x)
+            x = torch.cat((x, outs[-4]), 1)
+            x = self.layer4(x)
+            x = torch.cat((x, outs[-5]), 1)
+
+        else:
+            x = self.layer1(x)
+            x = self.layer2(x)
+            x = self.layer3(x)
+            x = self.layer4(x)
+
         return x
 
 class DeConv(Decoder):
@@ -136,21 +149,30 @@ class UpProj(Decoder):
             x = self.relu(x)
             return x
 
-    def __init__(self, in_channels):
+    def __init__(self, in_channels, skip):
         super(UpProj, self).__init__()
-        self.layer1 = self.UpProjModule(in_channels)
-        self.layer2 = self.UpProjModule(in_channels//2)
-        self.layer3 = self.UpProjModule(in_channels//4)
-        self.layer4 = self.UpProjModule(in_channels//8)
 
-def choose_decoder(decoder, in_channels):
-    # iheight, iwidth = 10, 8
+        if skip == 1:
+            self.layer1 = self.UpProjModule(in_channels)
+            self.layer2 = self.UpProjModule(in_channels//2 + 512)
+            self.layer3 = self.UpProjModule(in_channels//4 + 256)
+            self.layer4 = self.UpProjModule(in_channels // 8 + 128)
+
+        else:
+            self.layer1 = self.UpProjModule(in_channels)
+            self.layer2 = self.UpProjModule(in_channels//2)
+            self.layer3 = self.UpProjModule(in_channels//4)
+            self.layer4 = self.UpProjModule(in_channels//8)
+
+
+
+def choose_decoder(decoder, in_channels, skip):
     if decoder[:6] == 'deconv':
         assert len(decoder)==7
         kernel_size = int(decoder[6])
         return DeConv(in_channels, kernel_size)
     elif decoder == "upproj":
-        return UpProj(in_channels)
+        return UpProj(in_channels, skip)
     elif decoder == "upconv":
         return UpConv(in_channels)
     else:
@@ -195,7 +217,7 @@ class ResNet(nn.Module):
 
         self.conv2 = nn.Conv2d(num_channels,num_channels//2,kernel_size=1,bias=False)
         self.bn2 = nn.BatchNorm2d(num_channels//2)
-        self.decoder = choose_decoder(decoder, num_channels//2)
+        self.decoder = choose_decoder(decoder, num_channels//2, 0)
 
         # setting bias=true doesn't improve accuracy
         self.conv3 = nn.Conv2d(num_channels//32,1,kernel_size=3,stride=1,padding=1,bias=False)
@@ -227,43 +249,6 @@ class ResNet(nn.Module):
         x = self.bilinear(x)
 
         return x
-
-# class VGGNet(nn.Module):
-#   def __init__(self, layers, decoder, output_size, in_channels=3, pretrained=True):
-#     super(VGGNet,self).__init__()
-#     pretrained_model = torchvision.models.vgg16(pretrained=True)
-#     print(pretrained_model)
-#     if in_channels == 3:
-#         self.features = pretrained_model._modules['features']
-#     else:
-#         input_layer = nn.Conv2d(in_channels,kernel_size=64,stride=3,padding=1)
-#         weights_init(input_layer)
-#         self.features = nn.Sequential(
-#             layer,*list(pretrained_model.features.children())[1:]                          
-#           )
-#     self.output_size = output_size
-#     # self.avgpool = pretrained_model._modules['avgpool']
-#     # self.classifier = pretrained_model._modules['classifier']
-#     del pretrained_model
-#     num_channels = 512
-#     self.conv2 = nn.Conv2d(num_channels,num_channels//2,kernel_size=1)
-#     self.bn2 = nn.BatchNorm2d(num_channels//2)
-#     self.decoder = choose_decoder(decoder,num_channels//2)
-#     self.conv3 = nn.Conv2d(num_channels//32,1,kernel_size=3,stride=1,padding=1,bias=False)
-#     self.nearest = nn.Upsample(size=self.output_size, mode='nearest', align_corners=True)
-#     self.conv2.apply(init_weights)
-#     self.bn2.apply(init_weights)
-#     self.decoder.apply(init_weights)
-#     self.conv3.apply(init_weights)
-#   def forward(self,x):
-#     x = self.features(x)
-#     x = self.conv2(x)
-#     x = self.bn2(x)
-#     x = self.decoder(x)
-#     x = self.conv3(x)
-#     x = self.nearest(x)
-
-
 
 class VGGNet(nn.Module):
     def __init__(self, layers, decoder, output_size, in_channels=3, pretrained=True):
@@ -298,7 +283,7 @@ class VGGNet(nn.Module):
             num_channels = 512
         self.conv2 = nn.Conv2d(num_channels,num_channels//2,kernel_size=1,bias=False)
         self.bn2 = nn.BatchNorm2d(num_channels//2)
-        self.decoder = choose_decoder(decoder, num_channels//2)
+        self.decoder = choose_decoder(decoder, num_channels//2, 0)
 
         # setting bias=true doesn't improve accuracy
         self.conv3 = nn.Conv2d(num_channels//32,1,kernel_size=3,stride=1,padding=1,bias=False)
@@ -317,6 +302,70 @@ class VGGNet(nn.Module):
 
         # decoder
         x = self.decoder(x)
+        x = self.conv3(x)
+        x = self.upsample(x)
+        # print(x)
+        return x
+
+class VGGSkipNet(nn.Module):
+    def __init__(self, layers, decoder, output_size, in_channels=3, pretrained=True):
+
+        if layers not in [16,19]:
+            raise RuntimeError('Only 16 and 19 layer model is defined for VGGNet. Got {}'.format(layers))
+
+        super(VGGNet, self).__init__()
+        if(layers==16):
+          pretrained_model = torchvision.models.vgg16_bn(pretrained=pretrained)
+        else:
+          pretrained_model = torchvision.models.vgg19_bn(pretrained=pretrained)
+        self.features = pretrained_model._modules['features']
+
+        if in_channels != 3:
+            new_features = nn.Sequential(*list(self.features.children()))
+            conv2d = nn.Conv2d(in_channels, 64, kernel_size=3, padding=1)
+            weights_init(conv2d)
+            new_features[0] = conv2d
+            self.features = new_features
+
+        self.output_size = output_size
+
+        # clear memory
+        del pretrained_model
+
+        # define number of intermediate channels
+        if layers == 16:
+            num_channels = 512
+        elif layers == 19:
+            num_channels = 512
+        self.conv2 = nn.Conv2d(num_channels,num_channels//2,kernel_size=1,bias=False)
+        self.bn2 = nn.BatchNorm2d(num_channels//2)
+        self.decoder = choose_decoder(decoder, num_channels//2, 1)
+
+        # setting bias=true doesn't improve accuracy
+        self.conv3 = nn.Conv2d(num_channels//32 + 64,1,kernel_size=3,stride=1,padding=1,bias=False)
+        self.upsample = nn.Upsample(size=self.output_size)
+
+        # weight init
+        self.conv2.apply(weights_init)
+        self.bn2.apply(weights_init)
+        self.decoder.apply(weights_init)
+        self.conv3.apply(weights_init)
+
+    def forward(self, x):
+        # vggnet
+        feature_list = list(self.features.children())
+
+        outs = []
+        for feature in feature_list:
+            x = feature(x)
+            if (isinstance(feature, nn.MaxPool2d)):
+                outs.append(x)
+
+        x = self.conv2(x)
+        x = self.bn2(x)
+
+        # decoder
+        x = self.decoder((x,outs))
         x = self.conv3(x)
         x = self.upsample(x)
         # print(x)
