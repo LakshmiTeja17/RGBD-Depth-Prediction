@@ -41,7 +41,7 @@ class Result(object):
         self.absrel = float((abs_diff / target).mean())
         
         maxRatio = torch.max(output / target, target / output)
-        self.delta1 = float((maxRatio < 1.25).float().mean())
+        self.delta1 = float((maxRatio < 1.25).float().mean()) 
         self.delta2 = float((maxRatio < 1.25 ** 2).float().mean())
         self.delta3 = float((maxRatio < 1.25 ** 3).float().mean())
         self.data_time = 0

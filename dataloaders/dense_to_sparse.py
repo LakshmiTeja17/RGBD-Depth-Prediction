@@ -27,22 +27,20 @@ class RandomSampling(DenseToSparse):
         return "%s{ns=%d,md=%f}" % (self.name, self.num_samples, self.max_depth)
 
     def dense_to_sparse(self, rgb, depth):
-        """
-        Samples pixels with `num_samples`/#pixels probability in `depth`.
-        Only pixels with a maximum depth of `max_depth` are considered.
-        If no `max_depth` is given, samples in all pixels
-        """
+        
         mask_keep = depth > 0
         if self.max_depth is not np.inf:
-            mask_keep = np.bitwise_and(mask_keep, depth <= self.max_depth)
+            mask_keep = np.logical_and(mask_keep, depth <= self.max_depth)
         n_keep = np.count_nonzero(mask_keep)
         if n_keep == 0:
             return mask_keep
         else:
-            arr = np.zeros(depth.shape)
-            arr[: self.num_samples] = 1
+            arr = np.zeros(n_keep, dtype = bool)
+            arr[: self.num_samples] = True
             np.random.shuffle(arr)
-            return np.bitwise_and(mask_keep, arr)
+            i, j = np.nonzero(mask_keep)
+            mask_keep[i,j] = arr
+            return mask_keep
 
 class UniformSampling(DenseToSparse):
     name = "uar"
@@ -62,13 +60,13 @@ class UniformSampling(DenseToSparse):
         """
         mask_keep = depth > 0
         if self.max_depth is not np.inf:
-            mask_keep = np.bitwise_and(mask_keep, depth <= self.max_depth)
+            mask_keep = np.logical_and(mask_keep, depth <= self.max_depth)
         n_keep = np.count_nonzero(mask_keep)
         if n_keep == 0:
             return mask_keep
         else:
             prob = float(self.num_samples) / n_keep
-            return np.bitwise_and(mask_keep, np.random.uniform(0, 1, depth.shape) < prob)
+            return np.logical_and(mask_keep, np.random.uniform(0, 1, depth.shape) < prob)
 
 
 class SimulatedStereo(DenseToSparse):
@@ -98,7 +96,7 @@ class SimulatedStereo(DenseToSparse):
         gx = cv2.Sobel(blurred, cv2.CV_64F, 1, 0, ksize=5)
         gy = cv2.Sobel(blurred, cv2.CV_64F, 0, 1, ksize=5)
 
-        depth_mask = np.bitwise_and(depth != 0.0, depth <= self.max_depth)
+        depth_mask = np.logical_and(depth != 0.0, depth <= self.max_depth)
 
         edge_fraction = float(self.num_samples) / np.size(depth)
 
@@ -110,5 +108,5 @@ class SimulatedStereo(DenseToSparse):
             kernel = np.ones((self.dilate_kernel, self.dilate_kernel), dtype=np.uint8)
             cv2.dilate(mag_mask.astype(np.uint8), kernel, iterations=self.dilate_iterations) #Potentially 4-5 times of num_samples returned!!
 
-        mask = np.bitwise_and(mag_mask, depth_mask)
+        mask = np.logical_and(mag_mask, depth_mask)
         return mask

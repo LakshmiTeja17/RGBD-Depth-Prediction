@@ -11,18 +11,32 @@ IMG_EXTENSIONS = ['.h5', '.png']
 def is_image_file(filename):
     return any(os.path.splitext(filename)[-1] == extension for extension in IMG_EXTENSIONS)
 
-def make_dataset(dir):
+def make_dataset_h5(dir):
     images = []
     dir = os.path.expanduser(dir)
-    dir_rgb = os.path.join(dir,'rgb')
-    for root, _, fnames in sorted(os.walk(dir_rgb)):
+    for target in sorted(os.listdir(dir)):
+        d = os.path.join(dir, target)
+        if not os.path.isdir(d):
+            continue
+        for root, _, fnames in sorted(os.walk(d)):
+            for fname in sorted(fnames):
+                if is_image_file(fname):
+                    path = os.path.join(root, fname)
+                    images.append(path)
+    return np.array(images)
+
+def make_dataset_png(dir):
+    images = []
+    dir = os.path.expanduser(dir)
+    dir_depth = os.path.join(dir,'depth')
+    for root, _, fnames in sorted(os.walk(dir_depth)):
         for fname in sorted(fnames):
             if is_image_file(fname):
-                rgb_path = os.path.join(root, fname)
-                depth_path = os.path.join(root.replace('rgb', 'depth'), fname)
+                depth_path = os.path.join(root, fname)
+                rgb_path = os.path.join(root.replace('depth', 'rgb'), fname)
                 item = (rgb_path, depth_path)
                 images.append(item)
-    return images
+    return np.array(images)
 
 def png_loader(rgb_path, depth_path):
     rgb = cv2.imread(rgb_path)
@@ -43,8 +57,17 @@ class MyDataloader(data.Dataset):
     modality_names = ['rgb', 'rgbd', 'd']
     color_jitter = transforms.ColorJitter(0.4, 0.4, 0.4)
 
-    def __init__(self, root, type, sparsifier=None, modality='rgb', loader=png_loader):
-        imgs = make_dataset(root)
+    def __init__(self, root, type, sparsifier=None, modality='rgb', loader=h5_loader):
+        
+        if(loader == png_loader):
+            imgs = make_dataset_png(root)
+        if(loader == h5_loader):
+            imgs = make_dataset_h5(root)
+            
+#         if(type == val and len(imgs) > 3200):
+#             np.random.shuffle(imgs)
+#             imgs = imgs[:3200]
+            
         assert len(imgs)>0, "Found 0 images in subfolders of: " + root + "\n"
         print("Found {} images in {} folder.".format(len(imgs), type))
         self.root = root
@@ -92,8 +115,13 @@ class MyDataloader(data.Dataset):
         Returns:
             tuple: (rgb, depth) the raw data.
         """
-        rgb_path, depth_path = self.imgs[index]
-        rgb, depth = self.loader(rgb_path, depth_path)
+        if self.loader == png_loader:
+            rgb_path, depth_path = self.imgs[index]
+            rgb, depth = self.loader(rgb_path, depth_path)
+        if self.loader == h5_loader:
+            path = self.imgs[index]
+            rgb, depth = self.loader(path)
+            
         return rgb, depth
 
     def __getitem__(self, index):
@@ -123,8 +151,6 @@ class MyDataloader(data.Dataset):
             input_tensor = input_tensor.unsqueeze(0)
         depth_tensor = to_tensor(depth_np)
         depth_tensor = depth_tensor.unsqueeze(0)
-
-
 
         return input_tensor, depth_tensor
 
