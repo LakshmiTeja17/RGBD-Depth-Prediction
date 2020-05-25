@@ -38,8 +38,6 @@ class RandomSampling(DenseToSparse):
             arr = np.zeros(n_keep, dtype = bool)
             arr[: self.num_samples] = True
             np.random.shuffle(arr)
-            # print(np.nonzero(mask_keep))
-            # print(mask_keep.shape)
             i, j = np.nonzero(mask_keep)
             mask_keep[i,j] = arr
             return mask_keep
@@ -55,11 +53,7 @@ class UniformSampling(DenseToSparse):
         return "%s{ns=%d,md=%f}" % (self.name, self.num_samples, self.max_depth)
 
     def dense_to_sparse(self, rgb, depth):
-        """
-        Samples pixels with `num_samples`/#pixels probability in `depth`.
-        Only pixels with a maximum depth of `max_depth` are considered.
-        If no `max_depth` is given, samples in all pixels
-        """
+        
         mask_keep = depth > 0
         if self.max_depth is not np.inf:
             mask_keep = np.logical_and(mask_keep, depth <= self.max_depth)
@@ -85,15 +79,8 @@ class SimulatedStereo(DenseToSparse):
         return "%s{ns=%d,md=%f,dil=%d.%d}" % \
                (self.name, self.num_samples, self.max_depth, self.dilate_kernel, self.dilate_iterations)
 
-    # We do not use cv2.Canny, since that applies non max suppression
-    # So we simply do
-    # RGB to intensitities
-    # Smooth with gaussian
-    # Take simple sobel gradients
-    # Threshold the edge gradient
-    # Dilatate (http://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_imgproc/py_morphological_ops/py_morphological_ops.html)
     def dense_to_sparse(self, rgb, depth):
-        gray = rgb2grayscale(rgb)  #Seperate function may not be required
+        gray = rgb2grayscale(rgb) 
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         gx = cv2.Sobel(blurred, cv2.CV_64F, 1, 0, ksize=5)
         gy = cv2.Sobel(blurred, cv2.CV_64F, 0, 1, ksize=5)
@@ -108,7 +95,6 @@ class SimulatedStereo(DenseToSparse):
 
         if self.dilate_iterations >= 0:
             kernel = np.ones((self.dilate_kernel, self.dilate_kernel), dtype=np.uint8)
-            cv2.dilate(mag_mask.astype(np.uint8), kernel, iterations=self.dilate_iterations) #Potentially 4-5 times of num_samples returned!!
-
+            cv2.dilate(mag_mask.astype(np.uint8), kernel, iterations=self.dilate_iterations) 
         mask = np.logical_and(mag_mask, depth_mask)
         return mask

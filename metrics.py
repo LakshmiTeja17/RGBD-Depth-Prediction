@@ -63,7 +63,7 @@ class Result(object):
         self.photometric = photometric
 
     def evaluate(self, output, target, photometric=0):
-        valid_mask = target > 0.1
+        valid_mask = target > 0
 
         # convert from meters to mm
         output_mm = 1e3 * output[valid_mask]
@@ -73,6 +73,7 @@ class Result(object):
 
         self.mse = float((torch.pow(abs_diff, 2)).mean())
         self.rmse = math.sqrt(self.mse)
+        
         self.mae = float(abs_diff.mean())
         self.lg10 = float((log10(output_mm) - log10(target_mm)).abs().mean())
         self.absrel = float((abs_diff / target_mm).mean())

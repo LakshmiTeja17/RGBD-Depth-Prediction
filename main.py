@@ -14,6 +14,8 @@ from metrics import AverageMeter, Result
 import criteria
 import helper
 from inverse_warp import Intrinsics, homography_from
+from torch.autograd import Variable
+from torch.autograd import grad as Grad
 
 model_names = ['resnet','vgg']
 loss_names = ['l1', 'l2']
@@ -97,6 +99,11 @@ parser.add_argument('--val',
                     default="select",
                     choices=["select", "full"],
                     help='full or select validation set')
+parser.add_argument('--pnp',
+                    type=str,
+                    default="yes",
+                    choices=["yes", "no"],
+                    help='type yes to apply pnp for evaluation, else no')
 parser.add_argument('--jitter',
                     type=float,
                     default=0.1,
@@ -216,20 +223,13 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
         width = batch_data['d'].size(2)
         batch_data['d'] = batch_data['d'].view(-1,1,height,width)
         depth_loss, photometric_loss, smooth_loss, mask = 0, 0, 0, None
+        
         if mode == 'train':
-            # Loss 1: the direct depth supervision from ground truth label
-            # mask=1 indicates that a pixel does not ground truth labels
+            
             if 'sparse' in args.train_mode:
-                # print('in sparse')
-                #print(pred)
-                #print("----------------------")
-                #print(batch_data['d'])
                 depth_loss = depth_criterion(pred, batch_data['d'])
-                mask = (batch_data['d'] < 1e-3).float()
-            # elif 'dense' in args.train_mode:
-            #     depth_loss = depth_criterion(pred, gt)
-            #     mask = (gt < 1e-3).float()
-
+                mask = (batch_data['d'] < 1e-3)
+            
             # Loss 2: the self-supervised photometric loss
             if args.use_pose:
                 # create multi-scale pyramids
@@ -237,7 +237,7 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
                 rgb_curr_array = helper.multiscale(batch_data['rgb'])
                 rgb_near_array = helper.multiscale(batch_data['rgb_near'])
                 if mask is not None:
-                    mask_array = helper.multiscale(mask)
+                    mask_array = helper.depth_multiscale(mask)
                 num_scales = len(pred_array)
 
                 # compute photometric loss at multiple scales
@@ -248,6 +248,7 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
                     mask_ = None
                     if mask is not None:
                         mask_ = mask_array[scale]
+                        
 
                     # compute the corresponding intrinsic parameters
                     height_, width_ = pred_.size(2), pred_.size(3)
@@ -269,12 +270,31 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
             loss.backward()
             optimizer.step()
 
+        
+        if args.pnp == 'yes':
+            sparse_target = input_p[:,-1:] # NOTE: written for rgbd input
+            criterion = criteria.MaskedL1Loss().cuda() # NOTE: criterion function defined here only for clarity
+            pnp_iters = 5 # number of iterations
+            pnp_alpha = 0.01 # update/learning rate
+            pnp_z = model.module.pnp_forward_front(input_p)
+            for pnp_i in range(pnp_iters):
+                if pnp_i != 0:
+                    pnp_z = pnp_z - pnp_alpha * torch.sign(pnp_z_grad) # iFGM
+                pnp_z = Variable(pnp_z, requires_grad=True)
+                pred = model.module.pnp_forward_rear(pnp_z)
+                if pnp_i < pnp_iters - 1:
+                    pnp_loss = criterion(pred, sparse_target)
+                    pnp_z_grad = Grad([pnp_loss], [pnp_z], create_graph=True)[0]
+        
         gpu_time = time.time() - start
+        
         # measure accuracy and record loss
         with torch.no_grad():
             mini_batch_size = next(iter(batch_data.values())).size(0)
             result = Result()
             if mode != 'test_prediction' and mode != 'test_completion':
+                if (batch_data['d'].data != batch_data['d'].data).any():
+                    print("batch_data['d'].data" )
                 result.evaluate(pred.data, batch_data['d'].data, photometric_loss)
             [
                 m.update(result, gpu_time, data_time, mini_batch_size)
@@ -291,8 +311,11 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
     if is_best and not (mode == "train"):
         logger.save_img_comparison_as_best(mode, epoch)
     logger.conditional_summarize(mode, avg, is_best)
+    
+    
 
     return avg, is_best
+
 def create_data_loaders(args):
     # Data loading code
     # print("=> creating data loaders ...")
@@ -353,7 +376,10 @@ def main():
             args = checkpoint['args']
             args.data_folder = args_new.data_folder
             args.val = args_new.val
+            args.pnp = args_new.pnp
             is_eval = True
+            args.evaluate = True
+            args.data = 'kitti'
             print("Completed.")
         else:
             print("No model found at '{}'".format(args.evaluate))
@@ -367,6 +393,7 @@ def main():
             args.start_epoch = checkpoint['epoch'] + 1
             args.data_folder = args_new.data_folder
             args.val = args_new.val
+            args.pnp = args_new.pnp
             print("Completed. Resuming from epoch {}.".format(
                 checkpoint['epoch']))
         else:
@@ -375,11 +402,10 @@ def main():
 
     # Data loading code
     print("=> creating data loaders ... ")
-    if not is_eval:
-      train_loader, val_loader = create_data_loaders(args)
+    train_loader, val_loader = create_data_loaders(args)
 
     print("=> creating model and optimizer ... ", end='')
-    args.output_size = train_loader.dataset.output_size
+    args.output_size = val_loader.dataset.output_size
 
     if args.arch == 'vgg':
         model = VGGNet(args).to(device)

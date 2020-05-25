@@ -1,7 +1,7 @@
 import os
 import os.path
 import glob
-import fnmatch  # pattern matching
+import fnmatch
 import numpy as np
 from numpy import linalg as LA
 from random import choice
@@ -12,7 +12,7 @@ import cv2
 from dataloaders import transforms
 from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo, RandomSampling
 from dataloaders.pose_estimator import get_pose_pnp
-import h5py #https://www.h5py.org/
+import h5py
 input_options = ['d', 'rgb', 'rgbd', 'g', 'gd']
 
 IMG_EXTENSIONS = ['.h5', '.png']
@@ -44,13 +44,12 @@ def make_dataset_png(dir):
                 depth_path = os.path.join(root, fname)
                 rgb_path = os.path.join(root.replace('depth', 'rgb'), fname)
                 item = (rgb_path, depth_path)
-                images.append(item) #list of tuples
+                images.append(item)
     return np.array(images)
 
 def png_loader(rgb_path, depth_path):
     rgb = cv2.imread(rgb_path) if rgb_path is not None else None
     depth = cv2.imread(depth_path, 0) if depth_path is not None else None
-    #rgb = np.transpose(rgb, (1, 2, 0))  #HXWXC
     return rgb, depth
 
 def h5_loader(path):
@@ -65,9 +64,6 @@ def h5_loader(path):
     return rgb, depth
 
 def load_calib():
-    """
-    Temporarily hardcoding the calibration matrix using calib file from 2011_09_26
-    """
     calib = open("dataloaders/calib_cam_to_cam.txt", "r")
     lines = calib.readlines()
     P_rect_line = lines[25]
@@ -75,114 +71,14 @@ def load_calib():
     Proj_str = P_rect_line.split(":")[1].split(" ")[1:]
     Proj = np.reshape(np.array([float(p) for p in Proj_str]),
                       (3, 4)).astype(np.float32)
-    K = Proj[:3, :3]  # camera matrix
-
-    # note: we will take the center crop of the images during augmentation
-    # that changes the optical centers, but not focal lengths
+    K = Proj[:3, :3]  
     K[0, 2] = K[
         0,
-        2] - 13  # from width = 1242 to 1216, with a 13-pixel cut on both sides
+        2] - 13  
     K[1, 2] = K[
         1,
-        2] - 11.5  # from width = 375 to 352, with a 11.5-pixel cut on both sides
+        2] - 11.5  
     return K
-
-
-# def get_paths_and_transform(split, args):
-#     assert (args.use_d or args.use_rgb
-#             or args.use_g), 'no proper input selected'
-
-#     if split == "train":
-#         transform = train_transform
-#         glob_d = os.path.join(
-#             args.data_folder,
-#             'data_depth_velodyne/train/*_sync/proj_depth/velodyne_raw/image_0[2,3]/*.png'
-#         )
-#         glob_gt = os.path.join(
-#             args.data_folder,
-#             'data_depth_annotated/train/*_sync/proj_depth/groundtruth/image_0[2,3]/*.png'
-#         )
-
-#         def get_rgb_paths(p):
-#             ps = p.split('/')
-#             pnew = '/'.join([args.data_folder] + ['data_rgb'] + ps[-6:-4] +
-#                             ps[-2:-1] + ['data'] + ps[-1:])
-#             return pnew
-#     elif split == "val":
-#         if args.val == "full":
-#             transform = val_transform
-#             glob_d = os.path.join(
-#                 args.data_folder,
-#                 'data_depth_velodyne/val/*_sync/proj_depth/velodyne_raw/image_0[2,3]/*.png'
-#             )
-#             glob_gt = os.path.join(
-#                 args.data_folder,
-#                 'data_depth_annotated/val/*_sync/proj_depth/groundtruth/image_0[2,3]/*.png'
-#             )
-#             def get_rgb_paths(p):
-#                 ps = p.split('/')
-#                 pnew = '/'.join(ps[:-7] +
-#                     ['data_rgb']+ps[-6:-4]+ps[-2:-1]+['data']+ps[-1:])
-#                 return pnew
-#         elif args.val == "select":
-#             transform = no_transform
-#             glob_d = os.path.join(
-#                 args.data_folder,
-#                 "depth_selection/val_selection_cropped/velodyne_raw/*.png")
-#             glob_gt = os.path.join(
-#                 args.data_folder,
-#                 "depth_selection/val_selection_cropped/groundtruth_depth/*.png"
-#             )
-#             def get_rgb_paths(p):
-#                 return p.replace("groundtruth_depth","image")
-#     elif split == "test_completion":
-#         transform = no_transform
-#         glob_d = os.path.join(
-#             args.data_folder,
-#             "depth_selection/test_depth_completion_anonymous/velodyne_raw/*.png"
-#         )
-#         glob_gt = None  #"test_depth_completion_anonymous/"
-#         glob_rgb = os.path.join(
-#             args.data_folder,
-#             "depth_selection/test_depth_completion_anonymous/image/*.png")
-#     elif split == "test_prediction":
-#         transform = no_transform
-#         glob_d = None
-#         glob_gt = None  #"test_depth_completion_anonymous/"
-#         glob_rgb = os.path.join(
-#             args.data_folder,
-#             "depth_selection/test_depth_prediction_anonymous/image/*.png")
-#     else:
-#         raise ValueError("Unrecognized split " + str(split))
-
-#     if glob_gt is not None:
-#         # train or val-full or val-select
-#         paths_d = sorted(glob.glob(glob_d))
-#         paths_gt = sorted(glob.glob(glob_gt))
-#         paths_rgb = [get_rgb_paths(p) for p in paths_gt]
-#     else:
-#         # test only has d or rgb
-#         paths_rgb = sorted(glob.glob(glob_rgb))
-#         paths_gt = [None] * len(paths_rgb)
-#         if split == "test_prediction":
-#             paths_d = [None] * len(
-#                 paths_rgb)  # test_prediction has no sparse depth
-#         else:
-#             paths_d = sorted(glob.glob(glob_d))
-
-#     if len(paths_d) == 0 and len(paths_rgb) == 0 and len(paths_gt) == 0:
-#         raise (RuntimeError("Found 0 images under {}".format(glob_gt)))
-#     if len(paths_d) == 0 and args.use_d:
-#         raise (RuntimeError("Requested sparse depth but none was found"))
-#     if len(paths_rgb) == 0 and args.use_rgb:
-#         raise (RuntimeError("Requested rgb images but none was found"))
-#     if len(paths_rgb) == 0 and args.use_g:
-#         raise (RuntimeError("Requested gray images but no rgb was found"))
-#     if len(paths_rgb) != len(paths_d) or len(paths_rgb) != len(paths_gt):
-#         raise (RuntimeError("Produced different sizes for datasets"))
-
-#     paths = {"rgb": paths_rgb, "d": paths_d, "gt": paths_gt}
-#     return paths, transform
 
 
 def rgb_read(filename):
@@ -267,14 +163,14 @@ def train_transform(rgb, sparse, rgb_near, args):
     rgb_np = transform(rgb)
     #print("transformed rgb1\n")
     rgb_np = color_jitter(rgb_np) # random color jittering
-    rgb_np = np.asfarray(rgb_np, dtype='float') / 255	#Why do this??
+    #rgb_np = np.asfarray(rgb_np, dtype='float') / 255	#Why do this??
     # Scipy affine_transform produced RuntimeError when the depth map was
     # given as a 'numpy.ndarray'
     if(rgb_near is not None):
       rgb_near = transform(rgb_near)
       #print("transformed rgb2\n")
       rgb_near = color_jitter(rgb_near)
-      rgb_near = np.asfarray(rgb_near,dtype='float')/255
+      #rgb_near = np.asfarray(rgb_near,dtype='float')/255
         
     
     depth_np = np.asfarray(sparse, dtype='float32') /255
@@ -291,13 +187,13 @@ def val_transform(rgb, sparse, rgb_near, args):
     ])
     if rgb is not None:
         rgb = transform(rgb)
-        rgb = np.asfarray(rgb,dtype='float')/255
+        #rgb = np.asfarray(rgb,dtype='float')/255
     if sparse is not None:
         sparse = np.asfarray(sparse,dtype='float')/ 255
         sparse = transform(sparse)
     if rgb_near is not None:
         rgb_near = transform(rgb_near)
-        rgb_near = np.asfarray(rgb,dtype='float')/255
+        #rgb_near = np.asfarray(rgb,dtype='float')/255
     return rgb, sparse, rgb_near
 
 

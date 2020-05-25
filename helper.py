@@ -260,13 +260,21 @@ def get_folder_name(args):
             ))
 
 
-avgpool = torch.nn.AvgPool2d(kernel_size=2, stride=2).cuda()
+maxpool = torch.nn.MaxPool2d(kernel_size=2, stride=2).cuda()
 
 
 def multiscale(img):
-    img1 = avgpool(img)
-    img2 = avgpool(img1)
-    img3 = avgpool(img2)
-    img4 = avgpool(img3)
-    img5 = avgpool(img4)
+    img1 = maxpool(img)
+    img2 = maxpool(img1)
+    img3 = maxpool(img2)
+    img4 = maxpool(img3)
+    img5 = maxpool(img4)
     return img5, img4, img3, img2, img1
+
+def depth_multiscale(img):
+    img1 = -maxpool(-img.float())
+    img2 = -maxpool(-img1.float())
+    img3 = -maxpool(-img2.float())
+    img4 = -maxpool(-img3.float())
+    img5 = -maxpool(-img4.float())
+    return img5.bool(), img4.bool(), img3.bool(), img2.bool(), img1.bool()

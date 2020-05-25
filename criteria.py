@@ -48,11 +48,11 @@ class PhotometricLoss(nn.Module):
         diff = torch.sum(diff, 1)  # sum along the color channel
 
         # compare only pixels that are not black
-        valid_mask = (torch.sum(recon, 1) > 0).float() * (torch.sum(target, 1)
-                                                          > 0).float()
+        valid_mask = (torch.sum(recon, 1) > 0) & (torch.sum(target, 1)
+                                                          > 0)
         if mask is not None:
-            valid_mask = valid_mask * torch.squeeze(mask).float()
-        valid_mask = valid_mask.bool().detach()
+            valid_mask = valid_mask & torch.squeeze(mask)
+        
         if valid_mask.numel() > 0:
             diff = diff[valid_mask]
             if diff.nelement() > 0:
