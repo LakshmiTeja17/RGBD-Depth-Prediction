@@ -108,6 +108,8 @@ This folder also has graphs: rmse.png, absrel.png, delta1.png and delta2.png to 
   <img src="/images/absrel.png" width="300" />
 </p>
 Results plotted against number of samples
+
+
 <br>
 <p float="left">
   <img src="/images/resnet_rgbd.png" width="300" />
