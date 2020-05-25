@@ -72,7 +72,6 @@ A number of trained models is available [here](https://drive.google.com/drive/fo
 	| Ours-100 | 4.303 | 0.095 | 90.0 | 96.3 | 98.3 |
 	| Ours-200 | 3.851 | 0.083 | 91.9 | 97.0 | 98.6 |
 	| Ours-500| **3.378** | **0.073** | **93.5** | **97.6** | **98.9** |
-	Image to be inserted here.
 	<!-- <img src="http://www.mit.edu/~fcma/images/ICRA18/acc_vs_samples_kitti.png" alt="photo not available" width="50%" height="50%"> -->
 
 	<!-- Note: our networks are trained on the KITTI odometry dataset, using only sparse labels from laser measurements. -->
