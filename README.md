@@ -78,6 +78,10 @@ A number of trained models is available [here](https://drive.google.com/drive/fo
 	<!-- Note: our networks are trained on the KITTI odometry dataset, using only sparse labels from laser measurements. -->
 
 ## Results
+![resnet_rgbd image](/images/resnet_rgbd.png)
+![vgg_rgbd image](/images/vgg_rgbd.png)
+![resnet_rgb image](/images/resnet_rgb.png)
+![vgg_rgb image](/images/vgg_rgb.png)
 
 ## References
 We have used below sources for the purpose of this project and acknowledge the use of code from these sources:
