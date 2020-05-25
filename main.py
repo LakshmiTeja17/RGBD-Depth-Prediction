@@ -271,7 +271,7 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
             optimizer.step()
 
 
-        if args.pnp == 'yes':
+        if pnp == 'yes':
             sparse_target = input_p[:,-1:] # NOTE: written for rgbd input
             criterion = criteria.MaskedL1Loss().cuda() # NOTE: criterion function defined here only for clarity
             pnp_iters = 5 # number of iterations
@@ -360,8 +360,9 @@ def create_data_loaders(args):
 
 
 def main():
-    global args
-    args.loader = h5_loader #change it when running on gcp
+    global args, pnp
+    pnp = args.pnp
+    args.loader = h5_loader
     checkpoint = None
     is_eval = False
     if args.evaluate:
