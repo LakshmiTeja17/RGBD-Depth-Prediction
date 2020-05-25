@@ -8,13 +8,14 @@ This repo can be used for training and testing of
 
 
 ## Contents
-0. [Summary](#Summary)
-0. [Dependencies](#Dependencies)
+0. [Summary](#summary)
+0. [Dependencies](#dependencies)
 0. [Training](#training)
 0. [Testing](#testing)
-0. [Benchmark](#benchmark)
-0. [Results](#Results)
-0. [References](#References)
+0. [Models](#models)
+0. [Metrics](#metrics)
+0. [Results](#results)
+0. [References](#references)
 
 ## Summary
 The project considers using sparse depth samples along with RGB images to generate dense depth map as shown in this [paper](https://arxiv.org/abs/1709.07492). The model has been trained on the kitti odometry dataset, which contains 22 sequences. We have replaced feature extractor from RESNET-18 to VGGNet. Additionally, we have used nearest neighbour upsampling instead of bilinear interpolation on the output of the decoder unit. Uniform Random Sampling has been done with depth points limited to 20,000.Moreover, certain improvements have been used over the proposed model such as self supervised depth completion neural network framework for getting better prediction from training data and Plug-and-play module to generate better results from the existing model on the test data.   
@@ -51,49 +52,41 @@ To test the performance of a trained model without training, simply run main.py 
 python3 main.py --evaluate [path_to_trained_model]
 ```
 
-## Trained Models
+## Models
 A number of trained models is available [here](https://drive.google.com/drive/folders/19IoDXg-lS6gPHgZh4m_63zrEdaTA0aQ_?usp=sharing). 
 
-## Benchmark
+## Metrics
 - Error metrics on KITTI dataset:
 
-	| RGB     |  rms  |  rel  | delta1 | delta2 | delta3 |
-	|-----------------------------|:-----:|:-----:|:-----:|:-----:|:-----:|
-	| [Make3D](http://papers.nips.cc/paper/5539-depth-map-prediction-from-a-single-image-using-a-multi-scale-deep-network.pdf) | 8.734 | 0.280 | 60.1 | 82.0 | 92.6 |
-	| [Mancini et al](https://arxiv.org/pdf/1607.06349.pdf) (_IROS 2016_)  | 7.508 | - | 31.8 | 61.7 | 81.3 |
-	| [Eigen et al](http://papers.nips.cc/paper/5539-depth-map-prediction-from-a-single-image-using-a-multi-scale-deep-network.pdf) (_NIPS 2014_)  | 7.156 | **0.190** | **69.2** | 89.9 | **96.7** |
-	| Ours-RGB             | **6.266** | 0.208 | 59.1 | **90.0** | 96.2 |
-
-	| RGBd-#samples   |  rms  |  rel  | delta1 | delta2 | delta3 |
-	|-----------------------------|:-----:|:-----:|:-----:|:-----:|:-----:|
-	| [Cadena et al](https://pdfs.semanticscholar.org/18d5/f0747a23706a344f1d15b032ea22795324fa.pdf) (_RSS 2016_)-650 | 7.14 | 0.179 | 70.9 | 88.8 | 95.6 |
-	| Ours-50 | 4.884 | 0.109 | 87.1 | 95.2 | 97.9 |
-	| [Liao et al](https://arxiv.org/abs/1611.02174) (_ICRA 2017_)-225 | 4.50 | 0.113 | 87.4 | 96.0 | 98.4 |
-	| Ours-100 | 4.303 | 0.095 | 90.0 | 96.3 | 98.3 |
-	| Ours-200 | 3.851 | 0.083 | 91.9 | 97.0 | 98.6 |
-	| Ours-500| **3.378** | **0.073** | **93.5** | **97.6** | **98.9** |
-	<!-- <img src="http://www.mit.edu/~fcma/images/ICRA18/acc_vs_samples_kitti.png" alt="photo not available" width="50%" height="50%"> -->
-
-	<!-- Note: our networks are trained on the KITTI odometry dataset, using only sparse labels from laser measurements. -->
-
+	| MODEL     |  RMSE(in mm)  |  ABSREL  | DELTA1 | DELTA2 |
+	|-----------|:-------------:|:--------:|:------:|:------:|
+	| VGG_RGB   | 4780.1        | 0.118    | 84.9   | 95.38  |
+	| VGG_RGBD  | 3729.031      | 0.0712   | 93.00  | 97.34  |
+	| RESNET_RGB| 4858.7        | 0.1205   | 84.51  | 95.22  |
+	| RESNET_RGBD| 3798.221     | 0.0712   | 92.79  | 97.18  |
+	| SELF_VGG_RGBD| 2486.115   | 0.058    | 96.15  | 98.13  |
 ## Results
-<!-- 
-<img src="images/resnet_rgbd.png" alt="resnet_rgbd" width="600">
-```
-model = resnet, modality = rgbd
-```
-<img src="images/vgg_rgbd.png" alt="vgg_rgbd" width="600">
-model = vgg, modality = rgbd
-<img src="images/resnet_rgb.png" alt="resnet_rgb" width="600">
-model = resnet, modality = rgb
-<img src="images/vgg_rgb.png" alt="vgg_rgb" width="600">
-model = vgg, modality = rgb
--->
-<img src="/images/rmse.png" alt="rmse" width="600"/>
-<img src="/images/absrel.png" alt="absrel" width="600"/>
-<img src="/images/delat1.png" alt="delta1" width="600"/>
-<img src="/images/delta2.png" alt="delta2" width="600"/>
-
+<p float="left">
+  <img src="/images/rmse.png" width="300" />
+  <img src="/images/delta1.png" width="300" /> 
+</p>
+<p float="left">
+  <img src="/images/delta2.png" width="300" />
+  <img src="/images/absrel.png" width="300" /> 
+</p>
+Results plotted against number of samples
+<br>
+<p float="left">
+  <img src="/images/resnet_rgbd.png" width="300" />
+  <img src="/images/vgg_rgbd.png" width="300" /> 
+</p>
+<p float="left">
+  <img src="/images/resnet_rgb.png" width="300" />
+  <img src="/images/vgg_rgb.png" width="300" /> 
+</p>
+Top Row showing the result on rgbd modality
+<br>
+Bottom Row showing the result on rgb modality
 
 
 ## References
