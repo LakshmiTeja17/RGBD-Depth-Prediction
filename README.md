@@ -5,6 +5,7 @@ This repo can be used for training and testing of
 - sparse depth based depth prediction
 - RGBd (i.e., both RGB and sparse depth) based depth prediction
 
+This branch contains the code required based on the task assigned in the project, for code containing modifications(self supervised learning framework),kindly checkout to the adhyay2000 branch. 
 
 
 ## Contents
@@ -84,9 +85,9 @@ Results plotted against number of samples
   <img src="/images/resnet_rgb.png" width="300" />
   <img src="/images/vgg_rgb.png" width="300" /> 
 </p>
-Top Row showing the result on rgbd modality
+Top Row showing the result on rgbd modality for ResNet(Left) and VGG(right)
 <br>
-Bottom Row showing the result on rgb modality
+Bottom Row showing the result on rgb modality for ResNet(Left) and VGG(right)
 
 
 ## References
