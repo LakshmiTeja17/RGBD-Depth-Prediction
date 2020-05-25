@@ -216,20 +216,20 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
             input_p = batch_data['rgb']
         elif(args.input == 'd'):
             input_p = batch_data['d']
-        
+
         pred = model(input_p)
-        
+
         height = batch_data['d'].size(1)
         width = batch_data['d'].size(2)
         batch_data['d'] = batch_data['d'].view(-1,1,height,width)
         depth_loss, photometric_loss, smooth_loss, mask = 0, 0, 0, None
-        
+
         if mode == 'train':
-            
+
             if 'sparse' in args.train_mode:
                 depth_loss = depth_criterion(pred, batch_data['d'])
                 mask = (batch_data['d'] < 1e-3)
-            
+
             # Loss 2: the self-supervised photometric loss
             if args.use_pose:
                 # create multi-scale pyramids
@@ -248,7 +248,7 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
                     mask_ = None
                     if mask is not None:
                         mask_ = mask_array[scale]
-                        
+
 
                     # compute the corresponding intrinsic parameters
                     height_, width_ = pred_.size(2), pred_.size(3)
@@ -270,7 +270,7 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
             loss.backward()
             optimizer.step()
 
-        
+
         if args.pnp == 'yes':
             sparse_target = input_p[:,-1:] # NOTE: written for rgbd input
             criterion = criteria.MaskedL1Loss().cuda() # NOTE: criterion function defined here only for clarity
@@ -285,9 +285,9 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
                 if pnp_i < pnp_iters - 1:
                     pnp_loss = criterion(pred, sparse_target)
                     pnp_z_grad = Grad([pnp_loss], [pnp_z], create_graph=True)[0]
-        
+
         gpu_time = time.time() - start
-        
+
         # measure accuracy and record loss
         with torch.no_grad():
             mini_batch_size = next(iter(batch_data.values())).size(0)
@@ -311,14 +311,12 @@ def iterate(mode, args, loader, model, optimizer, logger, epoch):
     if is_best and not (mode == "train"):
         logger.save_img_comparison_as_best(mode, epoch)
     logger.conditional_summarize(mode, avg, is_best)
-    
-    
+
+
 
     return avg, is_best
 
 def create_data_loaders(args):
-    # Data loading code
-    # print("=> creating data loaders ...")
     traindir = os.path.join('data', args.data, 'train')
 
     if args.evaluate:
@@ -339,7 +337,6 @@ def create_data_loaders(args):
     elif args.sparsifier == RandomSampling.name:
         sparsifier = RandomSampling(num_samples=args.num_samples, max_depth=max_depth)
 
-        # from dataloaders.kitti_dataloader import KITTIDataset
     args.sparsifier = sparsifier
     if not args.evaluate:
         args.root = traindir
@@ -440,7 +437,6 @@ def main():
     # main loop
     print("=> starting main loop ...")
     for epoch in range(args.start_epoch, args.epochs):
-        print('-----------------------------------------------------------------')
         print("=> starting training epoch {} ..".format(epoch))
         iterate("train", args, train_loader, model, optimizer, logger,
                 epoch)  # train for one epoch

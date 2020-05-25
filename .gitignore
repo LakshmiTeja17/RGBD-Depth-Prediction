@@ -1,7 +1,8 @@
-data/*
 data1/*
 data_old/*
 results/*
 test.py
 README.md
 *.zip
+utils.py
+TODO
