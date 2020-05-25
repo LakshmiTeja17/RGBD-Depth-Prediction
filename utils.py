@@ -54,6 +54,11 @@ def parse_command():
                         help='path to latest checkpoint (default: none)')
     parser.add_argument('-e', '--evaluate', dest='evaluate', type=str, default='',
                         help='evaluate model on validation set')
+    parser.add_argument('--pnp',
+                    type=str,
+                    default="no",
+                    choices=["yes", "no"],
+                    help='type yes to apply pnp for evaluation, else no')
     parser.add_argument('--no-pretrain', dest='pretrained', action='store_false',
                         help='not to use ImageNet pre-trained weights')
     parser.set_defaults(pretrained=True)
