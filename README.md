@@ -66,6 +66,8 @@ A number of trained models is available [here](https://drive.google.com/drive/fo
 	| RESNET_RGB| 4858.7        | 0.1205   | 84.51  | 95.22  |
 	| RESNET_RGBD| 3798.221     | 0.0712   | 92.79  | 97.18  |
 	| SELF_VGG_RGBD| 2486.115   | 0.058    | 96.15  | 98.13  |
+	| SELF_VGG_RGBD_PNP| 2434.896 | 0.056  | 96.74  | 98.25  |
+	| VGG_RGBD_PNP | 3724.902   | 0.0697   | 93.01  | 97.31  |
 ## Results
 <p float="left">
   <img src="/images/rmse.png" width="300" />
