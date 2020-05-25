@@ -1,21 +1,3 @@
-''' TO CONSIDER:
-1) Skip connections
-2) Dilated convolutions: https://arxiv.org/abs/1606.00915
-3) Multi-Scale Context Module: https://arxiv.org/pdf/1511.07122.pdf
-4) Joint Pyramid Upsampling: https://arxiv.org/pdf/1903.11816.pdf (See other links here)
-'''
-
-
-
-
-
-
-
-
-
-
-
-
 import sys
 sys.stdout.flush()
 
@@ -36,6 +18,9 @@ from metrics import AverageMeter, Result
 from dataloaders.dense_to_sparse import UniformSampling, SimulatedStereo, RandomSampling
 import criteria
 import utils
+
+from torch.autograd import Variable
+from torch.autograd import grad as Grad
 
 device = torch.device("cuda")
 
@@ -111,11 +96,13 @@ def create_data_loaders(args):
     return train_loader, val_loader
 
 def main():
-    global args, best_result, output_directory, train_csv, test_csv, eval_csv
+    global args, best_result, output_directory, train_csv, test_csv, eval_csv, pnp
+    pnp = args.pnp
 
     # evaluation mode
     start_epoch = 0
     if args.evaluate:
+        args_new = args
         assert os.path.isfile(args.evaluate), \
         "=> no best model found at '{}'".format(args.evaluate)
         print("=> loading best model '{}'".format(args.evaluate))
@@ -128,6 +115,7 @@ def main():
             writer.writeheader()  
             
         args = checkpoint['args']
+        args.pnp = args_new.pnp
         start_epoch = checkpoint['epoch'] + 1
         best_result = checkpoint['best_result']
         model = checkpoint['model']
@@ -138,17 +126,18 @@ def main():
             _, val_loader = create_data_loaders(args)
             validate(val_loader, model, checkpoint['epoch'], write_to_file=True)
             
-        plot_results()    
         return
 
     # optionally resume from a checkpoint
     elif args.resume:
         chkpt_path = args.resume
+        args_new = args
         assert os.path.isfile(chkpt_path), \
             "=> no checkpoint found at '{}'".format(chkpt_path)
         print("=> loading checkpoint '{}'".format(chkpt_path))
         checkpoint = torch.load(chkpt_path)
         args = checkpoint['args']
+        args.pnp = args_new.pnp
         start_epoch = checkpoint['epoch'] + 1
         best_result = checkpoint['best_result']
         model = checkpoint['model']
@@ -208,8 +197,6 @@ def main():
          
 
     for epoch in range(start_epoch, args.epochs):
-      # epoch=start_epoch
-      # print(epoch)
       utils.adjust_learning_rate(optimizer, epoch, args.lr)
       train(train_loader, model, criterion, optimizer, epoch) # train for one epoch
       result, img_merge = validate(val_loader, model, epoch) # evaluate on validation set
@@ -301,6 +288,22 @@ def validate(val_loader, model, epoch, write_to_file=True):
         end = time.time()
         with torch.no_grad():
             pred = model(input)
+            
+        if pnp == 'yes':
+            sparse_target = input[:,-1:] # NOTE: written for rgbd input
+            criterion = criteria.MaskedL1Loss().cuda() # NOTE: criterion function defined here only for clarity
+            pnp_iters = 5 # number of iterations
+            pnp_alpha = 0.01 # update/learning rate
+            pnp_z = model.pnp_forward_front(input)
+            for pnp_i in range(pnp_iters):
+                if pnp_i != 0:
+                    pnp_z = pnp_z - pnp_alpha * torch.sign(pnp_z_grad) # iFGM
+                pnp_z = Variable(pnp_z, requires_grad=True)
+                pred = model.pnp_forward_rear(pnp_z)
+                if pnp_i < pnp_iters - 1:
+                    pnp_loss = criterion(pred, sparse_target)
+                    pnp_z_grad = Grad([pnp_loss], [pnp_z], create_graph=True)[0]    
+            
         torch.cuda.synchronize() #This is needed only if we want to compute the time
         gpu_time = time.time() - end
 
@@ -376,18 +379,6 @@ def validate(val_loader, model, epoch, write_to_file=True):
             
                 
     return avg, img_merge
-
-def plot_results():
-    
-    df = pd.read_csv( eval_csv)
-    for y in ['rmse', 'absrel', 'delta1', 'delta2']:
-        fig = plt.figure()
-        plt.plot( np.log10(df['num_samples']) , df[y])
-        plt.xlabel('Log of no. of samples')
-        plt.ylabel(y)
-        fig_path = os.path.join(output_directory, y)
-        plt.savefig( fig_path)  
-    
 
 if __name__ == '__main__':
     main()

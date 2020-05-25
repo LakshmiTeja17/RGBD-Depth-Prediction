@@ -227,43 +227,28 @@ class ResNet(nn.Module):
         x = self.bilinear(x)
 
         return x
+    
+    def pnp_forward_front(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
 
-# class VGGNet(nn.Module):
-#   def __init__(self, layers, decoder, output_size, in_channels=3, pretrained=True):
-#     super(VGGNet,self).__init__()
-#     pretrained_model = torchvision.models.vgg16(pretrained=True)
-#     print(pretrained_model)
-#     if in_channels == 3:
-#         self.features = pretrained_model._modules['features']
-#     else:
-#         input_layer = nn.Conv2d(in_channels,kernel_size=64,stride=3,padding=1)
-#         weights_init(input_layer)
-#         self.features = nn.Sequential(
-#             layer,*list(pretrained_model.features.children())[1:]                          
-#           )
-#     self.output_size = output_size
-#     # self.avgpool = pretrained_model._modules['avgpool']
-#     # self.classifier = pretrained_model._modules['classifier']
-#     del pretrained_model
-#     num_channels = 512
-#     self.conv2 = nn.Conv2d(num_channels,num_channels//2,kernel_size=1)
-#     self.bn2 = nn.BatchNorm2d(num_channels//2)
-#     self.decoder = choose_decoder(decoder,num_channels//2)
-#     self.conv3 = nn.Conv2d(num_channels//32,1,kernel_size=3,stride=1,padding=1,bias=False)
-#     self.nearest = nn.Upsample(size=self.output_size, mode='nearest', align_corners=True)
-#     self.conv2.apply(init_weights)
-#     self.bn2.apply(init_weights)
-#     self.decoder.apply(init_weights)
-#     self.conv3.apply(init_weights)
-#   def forward(self,x):
-#     x = self.features(x)
-#     x = self.conv2(x)
-#     x = self.bn2(x)
-#     x = self.decoder(x)
-#     x = self.conv3(x)
-#     x = self.nearest(x)
+        x = self.conv2(x)
+        x = self.bn2(x)
 
-
+        return x
+    
+    def pnp_forward_rear(self, x):
+        x = self.decoder(x)
+        x = self.conv3(x)
+        x = self.bilinear(x)
+        
+        return x
 
 class VGGNet(nn.Module):
     def __init__(self, layers, decoder, output_size, in_channels=3, pretrained=True):
@@ -309,6 +294,7 @@ class VGGNet(nn.Module):
         self.bn2.apply(weights_init)
         self.decoder.apply(weights_init)
         self.conv3.apply(weights_init)
+        
     def forward(self, x):
         # vggnet
         x = self.features(x)
@@ -319,5 +305,17 @@ class VGGNet(nn.Module):
         x = self.decoder(x)
         x = self.conv3(x)
         x = self.upsample(x)
-        # print(x)
         return x
+    
+    def pnp_forward_front(self, x):
+        x = self.features(x)
+        x = self.conv2(x)
+        x = self.bn2(x)
+        return x
+    
+    def pnp_forward_rear(self, x):
+        x = self.decoder(x)
+        x = self.conv3(x)
+        x = self.upsample(x)
+        return x
+    
