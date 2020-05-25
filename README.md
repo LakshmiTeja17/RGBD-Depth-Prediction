@@ -25,16 +25,9 @@ This code was tested with Python 3 and PyTorch 0.4.0.
 	```bash
 	sudo apt-get update
 	sudo apt-get install -y libhdf5-serial-dev hdf5-tools
-	pip3 install h5py matplotlib imageio scikit-image opencv-python
-	```
-- Download the preprocessed [KITTI Odometry](http://www.cvlibs.net/datasets/kitti/eval_odometry.php) dataset in HDF5 formats, and place them under the `data` folder.
-	```bash
-	mkdir data; cd data
-	wget http://datasets.lids.mit.edu/sparse-to-dense/data/nyudepthv2.tar.gz
-	tar -xvf nyudepthv2.tar.gz && rm -f nyudepthv2.tar.gz
-	wget http://datasets.lids.mit.edu/sparse-to-dense/data/kitti.tar.gz
- 	tar -xvf kitti.tar.gz && rm -f kitti.tar.gz
-	cd ..
+	pip3 install h5py matplotlib imageio scikit-image
+	pip3 install opencv-python==3.4.2.16
+	pip3 install opencv-contrib-python==3.4.2.16
 	```
 ## Training
 The training scripts come with several options, which can be listed with the `--help` flag. 
@@ -58,8 +51,8 @@ To test the performance of a trained model without training, simply run main.py 
 python3 main.py --evaluate [path_to_trained_model]
 ```
 
-<!-- ## Trained Models
-A number of trained models is available [here](http://datasets.lids.mit.edu/sparse-to-dense.pytorch/results/). -->
+## Trained Models
+A number of trained models is available [here](https://drive.google.com/drive/folders/19IoDXg-lS6gPHgZh4m_63zrEdaTA0aQ_?usp=sharing). 
 
 ## Benchmark
 - Error metrics on KITTI dataset:
@@ -85,6 +78,7 @@ A number of trained models is available [here](http://datasets.lids.mit.edu/spar
 	<!-- Note: our networks are trained on the KITTI odometry dataset, using only sparse labels from laser measurements. -->
 
 ## Results
+
 ## References
 We have used below sources for the purpose of this project and acknowledge the use of code from these sources:
 
