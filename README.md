@@ -1,28 +1,24 @@
-sparse-to-dense.pytorch
+sparse-to-dense
 ============================
-
-This repo implements the training and testing of deep regression neural networks for ["Sparse-to-Dense: Depth Prediction from Sparse Depth Samples and a Single Image"](https://arxiv.org/pdf/1709.07492.pdf) by [Fangchang Ma](http://www.mit.edu/~fcma) and [Sertac Karaman](http://karaman.mit.edu/) at MIT. A video demonstration is available on [YouTube](https://youtu.be/vNIIT_M7x7Y).
-<p align="center">
-	<img src="http://www.mit.edu/~fcma/images/ICRA2018.png" alt="photo not available" width="50%" height="50%">
-	<img src="https://j.gifs.com/Z4qDow.gif" alt="photo not available" height="50%">
-</p>
-
 This repo can be used for training and testing of
 - RGB (or grayscale image) based depth prediction
 - sparse depth based depth prediction
 - RGBd (i.e., both RGB and sparse depth) based depth prediction
 
-The original Torch implementation of the paper can be found [here](https://github.com/fangchangma/sparse-to-dense).
+
 
 ## Contents
-0. [Requirements](#requirements)
+0. [Summary](#Summary)
+0. [Dependencies](#Dependencies)
 0. [Training](#training)
 0. [Testing](#testing)
-0. [Trained Models](#trained-models)
 0. [Benchmark](#benchmark)
-0. [Citation](#citation)
+0. [Results](#Results)
+0. [References](#References)
 
-## Requirements
+## Summary
+The project considers using sparse depth samples along with RGB images to generate dense depth map as shown in this [paper](https://arxiv.org/abs/1709.07492). The model has been trained on the kitti odometry dataset, which contains 22 sequences. We have replaced feature extractor from RESNET-18 to VGGNet. Additionally, we have used nearest neighbour upsampling instead of bilinear interpolation on the output of the decoder unit. Uniform Random Sampling has been done with depth points limited to 20,000.Moreover, certain improvements have been used over the proposed model such as self supervised depth completion neural network framework for getting better prediction from training data and Plug-and-play module to generate better results from the existing model on the test data.   
+## Dependencies
 This code was tested with Python 3 and PyTorch 0.4.0.
 - Install [PyTorch](http://pytorch.org/) on a machine with CUDA GPU.
 - Install the [HDF5](https://en.wikipedia.org/wiki/Hierarchical_Data_Format) and other dependencies (files in our pre-processed datasets are in HDF5 formats).
@@ -31,7 +27,7 @@ This code was tested with Python 3 and PyTorch 0.4.0.
 	sudo apt-get install -y libhdf5-serial-dev hdf5-tools
 	pip3 install h5py matplotlib imageio scikit-image opencv-python
 	```
-- Download the preprocessed [NYU Depth V2](http://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html) and/or [KITTI Odometry](http://www.cvlibs.net/datasets/kitti/eval_odometry.php) dataset in HDF5 formats, and place them under the `data` folder. The downloading process might take an hour or so. The NYU dataset requires 32G of storage space, and KITTI requires 81G.
+- Download the preprocessed [KITTI Odometry](http://www.cvlibs.net/datasets/kitti/eval_odometry.php) dataset in HDF5 formats, and place them under the `data` folder.
 	```bash
 	mkdir data; cd data
 	wget http://datasets.lids.mit.edu/sparse-to-dense/data/nyudepthv2.tar.gz
@@ -48,7 +44,7 @@ python3 main.py --help
 
 For instance, run the following command to train a network with ResNet50 as the encoder, deconvolutions of kernel size 3 as the decoder, and both RGB and 100 random sparse depth samples as the input to the network.
 ```bash
-python3 main.py -a resnet50 -d deconv3 -m rgbd -s 100 --data nyudepthv2
+python3 main.py -a resnet50 -d deconv3 -m rgbd -s 100 --data kitti
 ```
 
 Training results will be saved under the `results` folder. To resume a previous training, run
@@ -62,29 +58,10 @@ To test the performance of a trained model without training, simply run main.py 
 python3 main.py --evaluate [path_to_trained_model]
 ```
 
-## Trained Models
-A number of trained models is available [here](http://datasets.lids.mit.edu/sparse-to-dense.pytorch/results/).
+<!-- ## Trained Models
+A number of trained models is available [here](http://datasets.lids.mit.edu/sparse-to-dense.pytorch/results/). -->
 
 ## Benchmark
-The following numbers are from the original Torch repo.
-- Error metrics on NYU Depth v2:
-
-	| RGB     |  rms  |  rel  | delta1 | delta2 | delta3 |
-	|-----------------------------|:-----:|:-----:|:-----:|:-----:|:-----:|
-	| [Roy & Todorovic](http://web.engr.oregonstate.edu/~sinisa/research/publications/cvpr16_NRF.pdf) (_CVPR 2016_) | 0.744 | 0.187 |  - | - | - |
-	| [Eigen & Fergus](http://cs.nyu.edu/~deigen/dnl/) (_ICCV 2015_)  | 0.641 | 0.158 | 76.9 | 95.0 | 98.8 |
-	| [Laina et al](https://arxiv.org/pdf/1606.00373.pdf) (_3DV 2016_)            | 0.573 | **0.127** | **81.1** | 95.3 | 98.8 |
-	| Ours-RGB             | **0.514** | 0.143 | 81.0 | **95.9** | **98.9** |
-
-	| RGBd-#samples   |  rms  |  rel  | delta1 | delta2 | delta3 |
-	|-----------------------------|:-----:|:-----:|:-----:|:-----:|:-----:|
-	| [Liao et al](https://arxiv.org/abs/1611.02174) (_ICRA 2017_)-225 | 0.442 | 0.104 | 87.8 | 96.4 | 98.9 |
-	| Ours-20 | 0.351 | 0.078 | 92.8 | 98.4 | 99.6 |
-	| Ours-50 | 0.281 | 0.059 | 95.5 | 99.0 | 99.7 |
-	| Ours-200| **0.230** | **0.044** | **97.1** | **99.4** | **99.8** |
-
-	<img src="http://www.mit.edu/~fcma/images/ICRA18/acc_vs_samples_nyu.png" alt="photo not available" width="50%" height="50%">
-
 - Error metrics on KITTI dataset:
 
 	| RGB     |  rms  |  rel  | delta1 | delta2 | delta3 |
@@ -102,25 +79,17 @@ The following numbers are from the original Torch repo.
 	| Ours-100 | 4.303 | 0.095 | 90.0 | 96.3 | 98.3 |
 	| Ours-200 | 3.851 | 0.083 | 91.9 | 97.0 | 98.6 |
 	| Ours-500| **3.378** | **0.073** | **93.5** | **97.6** | **98.9** |
+	Image to be inserted here.
+	<!-- <img src="http://www.mit.edu/~fcma/images/ICRA18/acc_vs_samples_kitti.png" alt="photo not available" width="50%" height="50%"> -->
 
-	<img src="http://www.mit.edu/~fcma/images/ICRA18/acc_vs_samples_kitti.png" alt="photo not available" width="50%" height="50%">
+	<!-- Note: our networks are trained on the KITTI odometry dataset, using only sparse labels from laser measurements. -->
 
-	Note: our networks are trained on the KITTI odometry dataset, using only sparse labels from laser measurements.
+## Results
+## References
+We have used below sources for the purpose of this project and acknowledge the use of code from these sources:
 
-## Citation
-If you use our code or method in your work, please consider citing the following:
+	Fangchang Ma, et al. "Sparse-to-Dense: Depth Prediction from Sparse Depth Samples and a Single Image." (2017).
 
-	@article{Ma2017SparseToDense,
-		title={Sparse-to-Dense: Depth Prediction from Sparse Depth Samples and a Single Image},
-		author={Ma, Fangchang and Karaman, Sertac},
-		booktitle={ICRA},
-		year={2018}
-	}
-	@article{ma2018self,
-		title={Self-supervised Sparse-to-Dense: Self-supervised Depth Completion from LiDAR and Monocular Camera},
-		author={Ma, Fangchang and Cavalheiro, Guilherme Venturelli and Karaman, Sertac},
-		journal={arXiv preprint arXiv:1807.00275},
-		year={2018}
-	}
+	Ma, Fangchang et al. "Self-supervised Sparse-to-Dense: Self-supervised Depth Completion from LiDAR and Monocular Camera". arXiv preprint arXiv:1807.00275. (2018).
 
-Please create a new issue for code-related questions. Pull requests are welcome.
+	Tsun-Hsuan Wang, et al. "Plug-and-Play: Improve Depth Estimation via Sparse Data Propagation." (2018).
