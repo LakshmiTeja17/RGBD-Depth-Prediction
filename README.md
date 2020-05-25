@@ -78,10 +78,24 @@ A number of trained models is available [here](https://drive.google.com/drive/fo
 	<!-- Note: our networks are trained on the KITTI odometry dataset, using only sparse labels from laser measurements. -->
 
 ## Results
-![resnet_rgbd image](/images/resnet_rgbd.png)
-![vgg_rgbd image](/images/vgg_rgbd.png)
-![resnet_rgb image](/images/resnet_rgb.png)
-![vgg_rgb image](/images/vgg_rgb.png)
+<!-- 
+<img src="images/resnet_rgbd.png" alt="resnet_rgbd" width="600">
+```
+model = resnet, modality = rgbd
+```
+<img src="images/vgg_rgbd.png" alt="vgg_rgbd" width="600">
+model = vgg, modality = rgbd
+<img src="images/resnet_rgb.png" alt="resnet_rgb" width="600">
+model = resnet, modality = rgb
+<img src="images/vgg_rgb.png" alt="vgg_rgb" width="600">
+model = vgg, modality = rgb
+-->
+<img src="/images/rmse.png" alt="rmse" width="600"/>
+<img src="/images/absrel.png" alt="absrel" width="600"/>
+<img src="/images/delat1.png" alt="delta1" width="600"/>
+<img src="/images/delta2.png" alt="delta2" width="600"/>
+
+
 
 ## References
 We have used below sources for the purpose of this project and acknowledge the use of code from these sources:
