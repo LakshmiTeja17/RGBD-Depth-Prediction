@@ -118,8 +118,8 @@ This folder also has a picture corresponding to each model, to visualize the pre
 <br>
 <br>
 
-- Top Row showing the result on rgbd modality for ResNet(Left) and VGG(right).
-Bottom Row showing the result on rgb modality for ResNet(Left) and VGG(right)
+- Top Row shows the result on RGBd images for ResNet(Left) and VGG(right).
+Bottom Row shows the result on RGB images for ResNet(Left) and VGG(right)
 <br>
 <p float="left">
   <img src="/images/resnet_rgbd.png" width="300" />
