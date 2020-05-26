@@ -31,7 +31,7 @@ Just train on a small subset of KITTI. (We have trained on the whole KITTI odome
 Compare results with the paper.
 
 ## Additional_work
-Improvements have been used over the proposed model. A self supervised framework was used for getting better accuracies. A Plug-and-play module was also used (https://arxiv.org/pdf/1812.08350.pdf) to generate better results during evaluation of the model.
+Improvements have been made over the proposed model. A self supervised framework was used for getting better accuracies. A Plug-and-play module was also used (https://arxiv.org/pdf/1812.08350.pdf) to generate better results during evaluation of the model.
 
 ## Dependencies
 - Install [PyTorch](http://pytorch.org/) on a machine with CUDA GPU.
@@ -106,7 +106,7 @@ This folder also has a picture corresponding to each model, to visualize the pre
 	| SELF_VGG_RGBD_PNP| 2434.896 | 0.056  | 96.74  | 98.25  |
 	| VGG_RGBD_PNP | 3724.902   | 0.0697   | 93.01  | 97.31  |
 ## Results
-Results plotted against number of samples
+- Results plotted against number of samples
 <p float="left">
   <img src="/images/rmse.png" width="300" />
   <img src="/images/delta1.png" width="300" />
@@ -117,10 +117,11 @@ Results plotted against number of samples
 </p>
 <br>
 <br>
-<br>
-Top Row showing the result on rgbd modality for ResNet(Left) and VGG(right)
+
+- Top Row showing the result on rgbd modality for ResNet(Left) and VGG(right)
 <br>
 Bottom Row showing the result on rgb modality for ResNet(Left) and VGG(right)
+<br>
 <p float="left">
   <img src="/images/resnet_rgbd.png" width="300" />
   <img src="/images/vgg_rgbd.png" width="300" />
