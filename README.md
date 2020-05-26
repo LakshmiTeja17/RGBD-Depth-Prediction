@@ -44,6 +44,7 @@ Improvements have been used over the proposed model. A self supervised framework
 	pip3 install opencv-contrib-python==3.4.2.16
 	```
 	Note: Please install the above versions of OpenCV only. Our code may not work with the latest version of OpenCV
+	<br>
 	Note: Our code will not work on a machine which does not have a GPU, as our code uses CUDA.
 
 ## Training
@@ -105,6 +106,7 @@ This folder also has a picture corresponding to each model, to visualize the pre
 	| SELF_VGG_RGBD_PNP| 2434.896 | 0.056  | 96.74  | 98.25  |
 	| VGG_RGBD_PNP | 3724.902   | 0.0697   | 93.01  | 97.31  |
 ## Results
+Results plotted against number of samples
 <p float="left">
   <img src="/images/rmse.png" width="300" />
   <img src="/images/delta1.png" width="300" />
@@ -113,10 +115,12 @@ This folder also has a picture corresponding to each model, to visualize the pre
   <img src="/images/delta2.png" width="300" />
   <img src="/images/absrel.png" width="300" />
 </p>
-Results plotted against number of samples
 <br>
 <br>
 <br>
+Top Row showing the result on rgbd modality for ResNet(Left) and VGG(right)
+<br>
+Bottom Row showing the result on rgb modality for ResNet(Left) and VGG(right)
 <p float="left">
   <img src="/images/resnet_rgbd.png" width="300" />
   <img src="/images/vgg_rgbd.png" width="300" />
@@ -125,9 +129,7 @@ Results plotted against number of samples
   <img src="/images/resnet_rgb.png" width="300" />
   <img src="/images/vgg_rgb.png" width="300" />
 </p>
-Top Row showing the result on rgbd modality for ResNet(Left) and VGG(right)
-<br>
-Bottom Row showing the result on rgb modality for ResNet(Left) and VGG(right)
+
 
 
 ## References
