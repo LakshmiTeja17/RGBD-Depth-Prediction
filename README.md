@@ -43,6 +43,9 @@ Improvements have been used over the proposed model. A self supervised framework
 	pip3 install opencv-python==3.4.2.16
 	pip3 install opencv-contrib-python==3.4.2.16
 	```
+	Note: Please install the above versions of OpenCV only. Our code may not work with the latest version of OpenCV
+	Note: Our code will not work on a machine which does not have a GPU, as our code uses CUDA.
+
 ## Training
 The training scripts come with several options, which can be listed with the `--help` flag.
 ```bash
@@ -76,13 +79,16 @@ To test the performance using the plug-and-play module:
 ```bash
 python3 main.py --evaluate [path_to_trained_model] --pnp yes
 ```
-Remember that plug and play module can be used only on models trained using rgbd input. It won't work if only rgb is given as input. (That is how the algorithm is designed)
+Check out the results of the evaluation in the file eval.csv in the model's corresponding folder in the results folder.
+
+Also, remember that plug and play module can be used only on models trained using rgbd input. It won't work if only rgb is given as input. (That is how the algorithm is designed)
 
 ## Models
 Our trained models are available [here](https://drive.google.com/drive/folders/19IoDXg-lS6gPHgZh4m_63zrEdaTA0aQ_?usp=sharing).
 
 The names of the models are self explanatory.
-This folder also has graphs: rmse.png, absrel.png, delta1.png and delta2.png to graphically visualize the performance of our model on
+This folder also has graphs: rmse.png, absrel.png, delta1.png and delta2.png to graphically visualize the performance of our model.
+This folder also has a picture corresponding to each model, to visualize the prediction of our model on some sample images. The leftmost column has the RGB images, middle column the sparse depth map and the rightmost column the predicted dense depth map.
 
 
 
@@ -108,8 +114,8 @@ This folder also has graphs: rmse.png, absrel.png, delta1.png and delta2.png to 
   <img src="/images/absrel.png" width="300" />
 </p>
 Results plotted against number of samples
-
-
+<br>
+<br>
 <br>
 <p float="left">
   <img src="/images/resnet_rgbd.png" width="300" />
