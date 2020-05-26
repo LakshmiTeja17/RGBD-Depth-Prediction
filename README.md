@@ -133,7 +133,7 @@ Bottom Row shows the result on RGB images for ResNet(Left) and VGG(right)
 
 
 ## References
-We have used below sources for the purpose of this project and acknowledge the use of code from these sources:
+We have used the below sources for the purpose of this project. We acknowledge the use of code from these sources:
 
 	Fangchang Ma, et al. "Sparse-to-Dense: Depth Prediction from Sparse Depth Samples and a Single Image." (2017).
 
