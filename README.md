@@ -1,4 +1,4 @@
-sparse-to-dense
+Sparse-to-Dense Depth Prediction
 ============================
 This repo can be used for training and testing of
 - RGB based depth prediction
