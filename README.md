@@ -5,7 +5,9 @@ This repo can be used for training and testing of
 - sparse depth based depth prediction
 - RGBd (i.e., both RGB and sparse depth) based depth prediction
 
-This branch has our work on the model that was expected of us in the problem statement  (VGG + Random Sampling + Nearest Neighbor Interpolation). Do remember to checkout the branch adhyay2000 for our work on training the same model using self-supervised learning.
+Our work is based on the following 2 papers: https://arxiv.org/abs/1709.07492, and https://arxiv.org/abs/1807.00275.
+
+This branch has our work on the model with VGG + Random Sampling + Nearest Neighbor Interpolation. **Do remember to checkout the branch adhyay2000 for our work on training the same model using self-supervised learning.**
 
 
 ## Contents
